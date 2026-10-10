@@ -64,3 +64,7 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Media & Database Local Artifacts
+*.mp4
+*.db

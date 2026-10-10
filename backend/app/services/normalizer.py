@@ -101,13 +101,21 @@ _DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Strip common receipt header/footer metadata and noise
+# Strip common receipt header/footer metadata, contact info, banking fields, and noise
 _NOISE_RE = re.compile(
-    r"\b(total|grand[\s-]?total|net[\s-]?total|sub[\s-]?total|amount|vat|gst|tax|discount|balance|change|cash|"
-    r"bill|invoice|receipt|ntn|nin|strn|pos|date|pate|time|tne|items|rate|description|price|qty|"
-    r"thank\s*you|branch|tel|phone|pechs|shahrah|karachi|clifton|khi)\b",
+    r"\b("
+    r"total|grand[\s-]?total|net[\s-]?total|sub[\s-]?total|gross[\s-]?total|amount|vat|gst|gstin|pan|tax|discount|balance|change|cash|"
+    r"bill|bill\s*to|ship\s*to|sold\s*to|customer|place\s*of\s*supply|terms|conditions|warranty|signature|signatory|authorised|"
+    r"invoice|receipt|ntn|nin|strn|pos|terminal|date|pate|time|tne|items|rate|description|price|qty|"
+    r"total\s*items|items\s*total|total\s*qty|item\s*count|"
+    r"thank\s*you|branch|tel|phone|mob|mobile|cell|whatsapp|helpline|call|contact|"
+    r"raast|transfer|transferred|stan|rrn|iban|account|acct|bank|easypaisa|jazzcash|nayapay|sadapay|wallet|"
+    r"pechs|shahrah|karachi|clifton|khi|lahore|islamabad|rawalpindi|jaipur|rajasthan"
+    r")\b",
     re.IGNORECASE,
 )
+_PHONE_RE = re.compile(r"\b(?:03\d{2}[-\s]?\d{7}|0\d{2,3}[-\s]?\d{6,8}|\+?92[-\s]?\d{3}[-\s]?\d{7})\b")
+_ACCOUNT_RE = re.compile(r"\b(?:stan|rrn|iban|acct|acc)\s*[:#]?\s*\d+\b", re.IGNORECASE)
 
 
 # ── Public Interface ──────────────────────────────────────────────────────────
@@ -238,6 +246,12 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     total_price = prices[-1]
     unit_price = prices[-2] if len(prices) >= 2 else total_price
 
+    # Guard against phone numbers or huge serial numbers being interpreted as prices
+    if total_price > 50000.0 or total_price <= 0.0:
+        return None
+    if unit_price > 50000.0:
+        unit_price = total_price
+
     # Extract raw item name: remove numeric tokens and currency words
     raw_name = _extract_item_name(line_body)
     if not raw_name or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 3:
@@ -250,9 +264,12 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
         category = match.category
         if unit == "pcs":  # If unit was not parsed, use standard unit from taxonomy
             unit = match.standard_unit
+        item_conf = max(confidence, 0.85)
     else:
         canonical_name = raw_name.title()
         category = "Miscellaneous"
+        # UNMATCHED ITEM: Guarantee confidence <= 0.60 so it routes to Review Queue
+        item_conf = min(confidence, 0.60)
 
     return LineItemCreate(
         raw_text=line_text,
@@ -261,7 +278,7 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
         unit=unit,
         unit_price=round(unit_price, 2),
         total_price=round(total_price, 2),
-        confidence_score=round(confidence, 3),
+        confidence_score=round(item_conf, 3),
         category=category,
         is_verified=False,
     )
@@ -326,10 +343,16 @@ def _extract_item_name(text: str) -> str:
 
 
 def _is_noise_line(text: str) -> bool:
-    """Return True for header/footer lines that should be skipped."""
+    """Return True for header/footer lines, metadata, and non-item lines that should be skipped."""
     stripped = text.strip().lower()
     # Skip very short lines
     if len(stripped) < 3:
+        return True
+    # Skip phone numbers
+    if _PHONE_RE.search(stripped):
+        return True
+    # Skip account numbers, Stan IDs, RRN, IBAN
+    if _ACCOUNT_RE.search(stripped):
         return True
     # Skip common receipt noise keywords
     if _NOISE_RE.search(stripped):

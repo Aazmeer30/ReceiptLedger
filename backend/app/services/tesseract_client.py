@@ -92,49 +92,58 @@ def extract_tokens(
         List of OCRToken (text, confidence, bounding_box).
     """
     target_lang = lang if lang is not None else "eng"
-    try:
-        data = pytesseract.image_to_data(
-            image,
-            lang=target_lang,
-            output_type=Output.DICT,
-            config=_FULL_TEXT_CONFIG,
-        )
-    except Exception as exc:
-        logger.error("Tesseract extraction failed (%s): %s", target_lang, exc)
-        return []
-
+    configs = [_FULL_TEXT_CONFIG, "--oem 1 --psm 6", "--oem 1 --psm 11"]
     tokens: List[OCRToken] = []
-    n_boxes = len(data["text"])
 
-    for i in range(n_boxes):
-        raw_text = data["text"][i].strip()
-        if not raw_text:
-            continue
-
-        conf_raw = data["conf"][i]
-        # Tesseract returns -1 for boxes with no text; skip them
-        if conf_raw < 0:
-            continue
-
-        confidence = float(conf_raw) / 100.0  # Normalise to [0, 1]
-
-        x = data["left"][i]
-        y = data["top"][i]
-        w = data["width"][i]
-        h = data["height"][i]
-
-        line_id = int(data["block_num"][i]) * 1000 + int(data["line_num"][i])
-        tokens.append(
-            OCRToken(
-                text=raw_text,
-                confidence=min(confidence, 1.0),
-                bounding_box=BoundingBox(
-                    x_min=x, y_min=y,
-                    x_max=x + w, y_max=y + h,
-                ),
-                line_id=line_id,
+    for cfg in configs:
+        try:
+            data = pytesseract.image_to_data(
+                image,
+                lang=target_lang,
+                output_type=Output.DICT,
+                config=cfg,
             )
-        )
+        except Exception as exc:
+            logger.error("Tesseract extraction failed (%s, %s): %s", target_lang, cfg, exc)
+            continue
+
+        n_boxes = len(data["text"])
+        current_tokens: List[OCRToken] = []
+        for i in range(n_boxes):
+            raw_text = data["text"][i].strip()
+            if not raw_text:
+                continue
+
+            conf_raw = data["conf"][i]
+            # Tesseract returns -1 for boxes with no text; skip them
+            if conf_raw < 0:
+                continue
+
+            confidence = float(conf_raw) / 100.0  # Normalise to [0, 1]
+
+            x = data["left"][i]
+            y = data["top"][i]
+            w = data["width"][i]
+            h = data["height"][i]
+
+            line_id = int(data["block_num"][i]) * 1000 + int(data["line_num"][i])
+            current_tokens.append(
+                OCRToken(
+                    text=raw_text,
+                    confidence=min(confidence, 1.0),
+                    bounding_box=BoundingBox(
+                        x_min=x, y_min=y,
+                        x_max=x + w, y_max=y + h,
+                    ),
+                    line_id=line_id,
+                )
+            )
+
+        if len(current_tokens) >= 5:
+            tokens = current_tokens
+            break
+        elif len(current_tokens) > len(tokens):
+            tokens = current_tokens
 
     logger.debug("Tesseract extracted %d tokens.", len(tokens))
     return tokens

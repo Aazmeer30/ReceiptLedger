@@ -242,13 +242,20 @@ def _needs_perspective_warp(pts: Optional[np.ndarray]) -> bool:
     if max_w == 0 or max_h == 0:
         return False
 
+    quad_area = cv2.contourArea(rect)
+    # If the quad covers more than 80% of the image, the user already framed the receipt cleanly
+    # Warping full-frame documents destroys text sharpness with interpolation
+    if quad_area > 0.80 * (max_w * max_h):
+        return False
+
     w_diff = abs(w_top - w_bottom) / max_w
     h_diff = abs(h_left - h_right) / max_h
 
     angle_top = abs(np.degrees(np.arctan2(tr[1] - tl[1], tr[0] - tl[0])))
     angle_left = abs(np.degrees(np.arctan2(bl[0] - tl[0], bl[1] - tl[1])))
 
-    return w_diff > 0.08 or h_diff > 0.08 or angle_top > 5.0 or angle_left > 5.0
+    # Only warp if there is substantial trapezoidal perspective or rotation
+    return (w_diff > 0.15 or h_diff > 0.15 or angle_top > 8.0 or angle_left > 8.0)
 
 
 def _four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:

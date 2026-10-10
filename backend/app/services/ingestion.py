@@ -89,18 +89,22 @@ async def ingest_receipt(
     if is_visual_dup:
         logger.info("Visual duplicate detected before OCR: receipt_id=%s", dup_receipt_id)
         existing = store.get_receipt(dup_receipt_id) if dup_receipt_id else None
-        return UploadReceiptResponse(
-            receipt_id=dup_receipt_id or str(uuid.uuid4()),
-            status=ReceiptStatus.DUPLICATE,
-            is_duplicate=True,
-            merchant_name=existing.get("merchant_name") if existing else None,
-            receipt_date=existing.get("receipt_date") if existing else (device_timestamp[:10] if device_timestamp else date.today().isoformat()),
-            total_amount=existing.get("total_amount", 0.0) if existing else 0.0,
-            confidence_score=existing.get("ocr_confidence", 1.0) if existing else 1.0,
-            needs_review=False,
-            receipt_type=ReceiptType.PRINTED,
-            line_items=[],
-        )
+        # If the existing entry was an empty failure or has 0 items, allow re-scan instead of blocking
+        if existing and existing.get("total_amount", 0.0) == 0.0 and existing.get("status") == ReceiptStatus.PENDING_REVIEW.value:
+            logger.info("Previous entry %s was an empty failure; allowing re-scan attempt.", dup_receipt_id)
+        else:
+            return UploadReceiptResponse(
+                receipt_id=dup_receipt_id or str(uuid.uuid4()),
+                status=ReceiptStatus.DUPLICATE,
+                is_duplicate=True,
+                merchant_name=existing.get("merchant_name") if existing else None,
+                receipt_date=existing.get("receipt_date") if existing else (device_timestamp[:10] if device_timestamp else date.today().isoformat()),
+                total_amount=existing.get("total_amount", 0.0) if existing else 0.0,
+                confidence_score=existing.get("ocr_confidence", 1.0) if existing else 1.0,
+                needs_review=False,
+                receipt_type=ReceiptType.PRINTED,
+                line_items=[],
+            )
 
     # ── Step 5: Receipt type classification ──────────────────────────────────
     receipt_type = classify_receipt_type(processed_image)
@@ -115,9 +119,8 @@ async def ingest_receipt(
     logger.info("OCR via '%s' produced %d tokens.", engine_used, len(tokens))
 
     if not tokens:
-        # Fall back to a minimal unknown receipt and register visual hash
+        # Fall back to minimal unknown receipt; DO NOT register visual hash so user can retry
         empty_resp = _build_empty_response(receipt_type)
-        dedup.register_hashes(empty_resp.receipt_id, phash_str, "")
         return empty_resp
 
     # ── Step 7: Spatial line reassembly ──────────────────────────────────────
@@ -151,7 +154,7 @@ async def ingest_receipt(
         if len(anomalies) == 1:
             normal_sum = sum(li.total_price for li in line_items if li not in anomalies)
             rem = round(total_amount - normal_sum, 2)
-            if rem > 0:
+            if 0 < rem <= total_amount and rem < 15000.0:
                 logger.info(
                     "Reconciled price anomaly for '%s' from %.2f to %.2f based on grand total %.2f",
                     anomalies[0].item_name, anomalies[0].total_price, rem, total_amount,
@@ -266,13 +269,13 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
 
     shop_keywords = re.compile(
         r"\b(super\s*market|market|karyana|store|general\s*store|mart|cash\s*&\s*carry|"
-        r"bakers|pharmacy|sweets|traders|al[\s-]?madina|imtiaz|naheed|carrefour)\b",
+        r"bakers|pharmacy|sweets|traders|al[\s-]?madina|imtiaz|naheed|carrefour|enterprises|electronics)\b",
         re.IGNORECASE,
     )
     price_like = re.compile(r"\b\d{2,}\b")
 
     candidates = []
-    for line in text_lines[:5]:
+    for line in text_lines[:6]:
         line_text = " ".join(t.text for t in line).strip()
         # Clean out leading junk symbols
         line_clean = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
@@ -281,13 +284,17 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         # Skip noise and lines with prices, dates, or fewer than 3 letters
         if not line_clean or alpha_count < 3 or price_like.search(line_clean):
             continue
-        if re.search(r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|pechs|shahrah|branch)\b", line_clean, re.IGNORECASE):
+        if re.search(r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|mob|pechs|shahrah|branch|invoice)\b", line_clean, re.IGNORECASE):
             continue
         candidates.append(line_clean)
 
     # Check for keyword matches in candidates
     for i, c in enumerate(candidates):
         if shop_keywords.search(c):
+            # If the next candidate is also part of the shop title (e.g. "AL-MADINA" + "SUPER MARKET"), combine
+            if i + 1 < len(candidates) and (shop_keywords.search(candidates[i + 1]) or len(candidates[i + 1].split()) <= 2):
+                combined = f"{c} {candidates[i + 1]}"
+                return re.sub(r"\s+", " ", combined).strip().title()
             # If the previous line is also a short header name (e.g. "AL-MADINA" + "SUPER MARKET"), combine them
             if i > 0 and len(candidates[i - 1].split()) <= 3 and len(re.sub(r"[^a-zA-Z]", "", candidates[i - 1])) >= 3:
                 combined = f"{candidates[i - 1]} {c}"
@@ -295,7 +302,6 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
             return re.sub(r"\s+", " ", c).strip().title()
 
     if candidates:
-        # Pick the candidate with the highest count of alphabetic characters
         best = max(candidates, key=lambda c: len(re.sub(r"[^a-zA-Z]", "", c)))
         if len(re.sub(r"[^a-zA-Z]", "", best)) >= 4:
             return re.sub(r"\s+", " ", best).strip().title()
@@ -309,9 +315,9 @@ def _extract_date(text_lines: List) -> Optional[str]:
     Converts to ISO-8601 YYYY-MM-DD.
     """
     date_patterns = [
-        re.compile(r"\b(?P<day>\d{1,2})[-/](?P<month>[a-zA-Z]{3})[-/](?P<year>\d{2,4})\b", re.IGNORECASE),
-        re.compile(r"\b(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})\b"),
-        re.compile(r"\b(?P<day>\d{1,2})[-/](?P<month>\d{1,2})[-/](?P<year>\d{2,4})\b"),
+        re.compile(r"\b(?P<day>\d{1,2})\s*[-/]\s*(?P<month>[a-zA-Z]{3})\s*[-/]\s*(?P<year>\d{2,4})\b", re.IGNORECASE),
+        re.compile(r"\b(?P<year>\d{4})\s*[-/]\s*(?P<month>\d{1,2})\s*[-/]\s*(?P<day>\d{1,2})\b"),
+        re.compile(r"\b(?P<day>\d{1,2})\s*[-/]\s*(?P<month>\d{1,2})\s*[-/]\s*(?P<year>\d{2,4})\b"),
     ]
     month_names = {
         "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -344,25 +350,67 @@ def _extract_date(text_lines: List) -> Optional[str]:
 def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
     """
     Extract receipt grand total:
-    1. First search bottom text lines for an explicit TOTAL / GRAND TOTAL amount.
-    2. Fall back to the sum of parsed line item totals if no total line is found.
+    1. Search bottom text lines for explicit GRAND TOTAL / NET TOTAL / TOTAL.
+    2. Exclude item count lines (e.g. 'TOTAL ITEMS: 5').
+    3. Ensure candidate total >= highest individual item price.
+    4. Fall back to the sum of parsed line item totals.
     """
     from app.services.normalizer import _extract_prices
 
-    total_pattern = re.compile(
-        r"\b(grand[\s-]?total|net[\s-]?total|sub[\s-]?total|total[\s-]?amount|total)\b",
+    item_count_pattern = re.compile(
+        r"\b(?:total\s*(?:items|item|qty|quantity|count|pcs)|items\s*total)\b",
         re.IGNORECASE,
     )
+    grand_total_pattern = re.compile(
+        r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|bill[\s-]?total|total[\s-]?amount|total[\s=:]+)\b",
+        re.IGNORECASE,
+    )
+    subtotal_pattern = re.compile(r"\b(sub[\s-]?total)\b", re.IGNORECASE)
 
+    item_sum = round(sum(li.total_price for li in line_items), 2)
+    max_item_price = max((li.total_price for li in line_items), default=0.0)
+
+    # Pass 1: Explicit GRAND TOTAL / NET TOTAL
     for line in reversed(text_lines):
         line_text = " ".join(t.text for t in line).strip()
-        if total_pattern.search(line_text):
+        if item_count_pattern.search(line_text):
+            continue
+        if grand_total_pattern.search(line_text):
             prices = _extract_prices(line_text)
             if prices:
-                return round(prices[-1], 2)
+                candidate = round(prices[-1], 2)
+                if candidate >= max_item_price and candidate > 0 and candidate < 100000.0:
+                    return candidate
 
-    # Fallback to sum of line items
-    return round(sum(li.total_price for li in line_items), 2)
+    # Pass 2: SUBTOTAL
+    for line in reversed(text_lines):
+        line_text = " ".join(t.text for t in line).strip()
+        if item_count_pattern.search(line_text):
+            continue
+        if subtotal_pattern.search(line_text):
+            prices = _extract_prices(line_text)
+            if prices:
+                candidate = round(prices[-1], 2)
+                if candidate >= max_item_price and candidate > 0 and candidate < 100000.0:
+                    return candidate
+
+    # Pass 3: Fall back to sum of extracted line items if available
+    if item_sum > 0:
+        return item_sum
+
+    # Pass 4: Any generic 'total' line with a reasonable price
+    for line in reversed(text_lines):
+        line_text = " ".join(t.text for t in line).strip()
+        if item_count_pattern.search(line_text):
+            continue
+        if re.search(r"\btotal\b", line_text, re.IGNORECASE):
+            prices = _extract_prices(line_text)
+            if prices:
+                candidate = round(prices[-1], 2)
+                if candidate > 0 and candidate < 100000.0:
+                    return candidate
+
+    return 0.0
 
 
 def _build_empty_response(receipt_type: ReceiptType) -> UploadReceiptResponse:
@@ -376,6 +424,24 @@ def _build_empty_response(receipt_type: ReceiptType) -> UploadReceiptResponse:
         ocr_confidence=0.0,
     )
     receipt_id = receipt_row["id"]
+    # Insert a review queue record so the user can see this unreadable capture in the Review Queue screen
+    li_row = store.insert_line_item(
+        receipt_id=receipt_id,
+        raw_text="[Image Unreadable - 0 text detected]",
+        item_name="Unreadable Receipt (Needs Retake/Review)",
+        quantity=1.0,
+        unit="pcs",
+        unit_price=0.0,
+        total_price=0.0,
+        confidence_score=0.0,
+        category="Miscellaneous",
+        is_verified=False,
+    )
+    store.insert_review_queue_item(
+        line_item_id=li_row["id"],
+        candidate_text="No text detected. Please verify lighting, alignment, or enter details manually.",
+        model_confidence=0.0,
+    )
     return UploadReceiptResponse(
         receipt_id=receipt_id,
         status=ReceiptStatus.PENDING_REVIEW,

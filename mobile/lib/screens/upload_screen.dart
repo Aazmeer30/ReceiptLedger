@@ -228,20 +228,60 @@ class _UploadScreenState extends State<UploadScreen> {
               ],
             ),
             const Divider(),
+            Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_today_outlined, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text('Date: $date', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.receipt_outlined, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text('Type: $receiptType', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.verified_outlined, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text('Conf: ${(conf * 100).toStringAsFixed(1)}%', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Date: $date', style: TextStyle(color: Colors.grey.shade700)),
-                Text('Type: $receiptType', style: TextStyle(color: Colors.grey.shade700)),
-                Text('Conf: ${(conf * 100).toStringAsFixed(1)}%', style: TextStyle(color: Colors.grey.shade700)),
+                Text(
+                  'Total Amount: Rs. ${total.toString()}',
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                ),
+                if (status == 'PENDING_REVIEW' || isDup)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _uploadResult = null;
+                        _selectedImageBytes = null;
+                        _selectedFileName = null;
+                      });
+                    },
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Rescan'),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Total Amount: Rs. ${total.toString()}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             if (isDup)
               Container(
