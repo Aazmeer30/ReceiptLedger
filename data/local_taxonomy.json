@@ -6,7 +6,7 @@
     "aliases": [
       "atta", "chakki atta", "fine atta", "flour", "chki ata", "ata",
       "wheat flour", "aata", "chakki aata", "gehun atta", "safaid atta",
-      "rozana atta", "sunehri atta", "maida", "whole wheat flour"
+      "rozana atta", "sunehri atta", "maida", "whole wheat flour", "ashirwad atta"
     ]
   },
   {
@@ -16,7 +16,7 @@
     "aliases": [
       "rice", "basmati", "basmati rice", "chawal", "sela rice", "irri rice", "super basmati",
       "kainat rice", "guard rice", "kernel basmati", "long grain rice",
-      "sela chawal", "white rice", "brown rice"
+      "sela chawal", "white rice", "brown rice", "falak rice", "al kabeer rice"
     ]
   },
   {
@@ -26,7 +26,8 @@
     "aliases": [
       "oil", "cooking oil", "dalda", "habib oil", "canola oil", "sunflower oil",
       "vegetable oil", "corn oil", "sufi oil", "mezan oil", "eva oil",
-      "kisan oil", "olive oil", "ghee", "banaspati ghee", "tel", "khana tel"
+      "kisan oil", "olive oil", "ghee", "banaspati ghee", "tel", "khana tel",
+      "mustard oil", "sarson ka tel", "deshi ghee", "asli ghee"
     ]
   },
   {
@@ -35,7 +36,7 @@
     "standard_unit": "kg",
     "aliases": [
       "sugar", "cheeni", "chini", "shakar", "white sugar", "refined sugar",
-      "cane sugar", "crystal sugar", "castor sugar"
+      "cane sugar", "crystal sugar", "castor sugar", "brown sugar", "gur", "jaggery"
     ]
   },
   {
@@ -44,7 +45,18 @@
     "standard_unit": "kg",
     "aliases": [
       "salt", "namak", "iodized salt", "pink salt", "himalayan salt",
-      "rock salt", "sea salt", "table salt", "lahori namak"
+      "rock salt", "sea salt", "table salt", "lahori namak", "national salt"
+    ]
+  },
+  {
+    "canonical_name": "Spices & Recipe Mix",
+    "category": "Groceries & Food",
+    "standard_unit": "pkt",
+    "aliases": [
+      "masala", "shan masala", "national masala", "biryani masala", "tikka masala",
+      "karahi masala", "qorma masala", "nihari masala", "chaat masala", "garam masala",
+      "haldi", "turmeric", "lal mirch", "red chilli", "dhaniya", "coriander powder",
+      "zeera", "cumin", "kali mirch", "black pepper", "kasuri methi"
     ]
   },
   {
@@ -54,16 +66,25 @@
     "aliases": [
       "milk", "doodh", "milk pack", "whole milk", "fresh milk", "nestle milk", "olper milk",
       "haleeb milk", "good milk", "dairy milk", "skimmed milk", "tetra pack milk",
-      "uht milk", "pasteurized milk"
+      "uht milk", "pasteurized milk", "olpers", "milkpak", "tarang", "tea whitener"
+    ]
+  },
+  {
+    "canonical_name": "Dairy Cream & Cheese",
+    "category": "Groceries & Food",
+    "standard_unit": "pkt",
+    "aliases": [
+      "cream", "dairy cream", "olpers cream", "milkpak cream", "fresh cream", "whipping cream",
+      "cheese", "cheddar cheese", "mozzarella cheese", "adams cheese", "happy cow", "paneer"
     ]
   },
   {
     "canonical_name": "Eggs",
     "category": "Groceries & Food",
-    "standard_unit": "dozen",
+    "standard_unit": "dzn",
     "aliases": [
       "eggs", "anda", "andey", "dozen eggs", "farm eggs", "brown eggs",
-      "white eggs", "organic eggs", "egg tray"
+      "white eggs", "organic eggs", "egg tray", "desi andey"
     ]
   },
   {
@@ -99,16 +120,44 @@
     "aliases": [
       "chicken", "murgh", "broiler chicken", "farm chicken", "whole chicken",
       "chicken pieces", "chicken breast", "chicken legs", "boneless chicken",
-      "tikka pieces", "karahi chicken", "chicken mince"
+      "tikka pieces", "karahi chicken", "chicken mince", "desi murgh"
     ]
   },
   {
-    "canonical_name": "Mutton",
+    "canonical_name": "Mutton & Beef",
     "category": "Groceries & Food",
     "standard_unit": "kg",
     "aliases": [
       "mutton", "gosht", "lamb", "beef", "meat", "goat meat",
-      "baqra gosht", "bakra gosht"
+      "baqra gosht", "bakra gosht", "bada gosht", "qeema", "mince"
+    ]
+  },
+  {
+    "canonical_name": "Frozen & Processed Foods",
+    "category": "Groceries & Food",
+    "standard_unit": "pkt",
+    "aliases": [
+      "nuggets", "k&n", "k&ns", "dawn", "menu", "sabroso", "seekh kabab", "shami kabab",
+      "sausages", "burger patties", "paratha", "dawn paratha", "samosa", "spring rolls"
+    ]
+  },
+  {
+    "canonical_name": "Sauces & Condiments",
+    "category": "Groceries & Food",
+    "standard_unit": "bottle",
+    "aliases": [
+      "ketchup", "tomato ketchup", "chili garlic sauce", "garlic sauce", "mayonnaise", "mayo",
+      "national ketchup", "shangrila ketchup", "soya sauce", "soy sauce", "vinegar", "sirka",
+      "chilli sauce", "hot sauce", "mustard paste"
+    ]
+  },
+  {
+    "canonical_name": "Jam & Honey",
+    "category": "Groceries & Food",
+    "standard_unit": "jar",
+    "aliases": [
+      "jam", "apple jam", "mango jam", "mixed fruit jam", "mitchells jam", "shezan jam",
+      "honey", "shehad", "marhaba honey", "langnese honey", "marmalade", "peanut butter"
     ]
   },
   {
@@ -118,17 +167,27 @@
     "aliases": [
       "tea", "chai patti", "chay pati", "pati", "chai", "green tea",
       "lipton tea", "tapal tea", "supreme tea", "brooke bond tea",
-      "danedar", "tez dum tea", "black tea", "loose tea", "tea bags"
+      "danedar", "tez dum tea", "black tea", "loose tea", "tea bags", "vital tea", "isb tea"
     ]
   },
   {
-    "canonical_name": "Biscuits",
+    "canonical_name": "Coffee",
+    "category": "Snacks & Beverages",
+    "standard_unit": "jar",
+    "aliases": [
+      "coffee", "nescafe", "instant coffee", "classic coffee", "gold coffee", "cappuccino",
+      "cold coffee", "coffee sachet", "espresso"
+    ]
+  },
+  {
+    "canonical_name": "Biscuits & Bakery",
     "category": "Snacks & Beverages",
     "standard_unit": "pkt",
     "aliases": [
       "biscuits", "biscuit", "cookies", "rio biscuits", "peek freans",
       "oreo", "marie biscuits", "prince biscuits", "digestive", "cracker",
-      "saltine", "nankhatai", "cake rusk"
+      "saltine", "nankhatai", "cake rusk", "rusk", "sooper", "tictac", "cup cake",
+      "pound cake", "fruit cake"
     ]
   },
   {
@@ -138,17 +197,37 @@
     "aliases": [
       "soft drink", "cola", "pepsi", "coke", "coca cola", "7up", "sprite",
       "mountain dew", "fanta", "miranda", "mirinda", "rc cola", "drink",
-      "soda", "dew", "7 up", "pakola", "shandy"
+      "soda", "dew", "7 up", "pakola", "shandy", "marinda", "sting"
     ]
   },
   {
-    "canonical_name": "Juice",
+    "canonical_name": "Juice & Syrups",
     "category": "Snacks & Beverages",
     "standard_unit": "ltr",
     "aliases": [
       "juice", "fruit juice", "mango juice", "nestle juice", "shezan juice",
-      "country pure juice", "fresh juice", "tropicana", "minutes maid",
-      "orange juice", "apple juice"
+      "country pure juice", "fresh juice", "tropicana", "minute maid",
+      "orange juice", "apple juice", "rooh afza", "jam e shirin", "tang",
+      "fruit drink", "slice juice", "frooto"
+    ]
+  },
+  {
+    "canonical_name": "Mineral Water",
+    "category": "Snacks & Beverages",
+    "standard_unit": "ltr",
+    "aliases": [
+      "mineral water", "water", "aquafina", "nestle water", "dasani", "sufi water",
+      "pure life", "drinking water", "bottled water"
+    ]
+  },
+  {
+    "canonical_name": "Snacks & Confectionery",
+    "category": "Snacks & Beverages",
+    "standard_unit": "pkt",
+    "aliases": [
+      "chips", "lays", "kurkure", "wavy", "cheetos", "nimco", "slims", "popcorn",
+      "chocolate", "dairy milk", "kitkat", "snickers", "mars", "cocomo", "candyland",
+      "toffee", "gantt", "bubble gum"
     ]
   },
   {
@@ -157,7 +236,8 @@
     "standard_unit": "pkt",
     "aliases": [
       "bread", "double roti", "roti", "naan", "sheermal", "toast bread",
-      "white bread", "brown bread", "sandwich bread", "pao"
+      "white bread", "brown bread", "sandwich bread", "pao", "dawn bread",
+      "wonder bread", "bake parlor bread"
     ]
   },
   {
@@ -167,7 +247,7 @@
     "aliases": [
       "dal", "daal", "daal chana", "dal chana", "lentils", "masoor dal", "mash dal", "chana dal",
       "moong dal", "toor dal", "arhar dal", "mixed dal", "whole masoor",
-      "black gram", "split peas"
+      "black gram", "split peas", "safaid chana", "white chickpeas", "kala chana", "lobia"
     ]
   },
   {
@@ -176,7 +256,7 @@
     "standard_unit": "kg",
     "aliases": [
       "yogurt", "dahi", "curd", "plain yogurt", "fresh dahi", "set yogurt",
-      "low fat yogurt", "milk yogurt", "packaged dahi"
+      "low fat yogurt", "milk yogurt", "packaged dahi", "nestle dahi"
     ]
   },
   {
@@ -185,7 +265,7 @@
     "standard_unit": "g",
     "aliases": [
       "butter", "makhan", "unsalted butter", "salted butter", "lurpak",
-      "country butter", "table butter"
+      "country butter", "table butter", "nurpur butter", "adams butter"
     ]
   },
   {
@@ -200,49 +280,87 @@
     ]
   },
   {
-    "canonical_name": "Dishwash Liquid",
+    "canonical_name": "Dishwash Liquid & Soap",
     "category": "Household & Cleaning",
     "standard_unit": "ml",
     "aliases": [
       "dishwash", "dish wash", "vim", "pril", "fairy", "dishwashing liquid",
-      "dish soap", "bartan saaf", "dish cleaner"
+      "dish soap", "bartan saaf", "dish cleaner", "max dishwash", "lemon max"
     ]
   },
   {
-    "canonical_name": "Toilet Cleaner",
+    "canonical_name": "Toilet & Floor Cleaner",
     "category": "Household & Cleaning",
     "standard_unit": "ml",
     "aliases": [
       "toilet cleaner", "harpic", "lavatory cleaner", "bathroom cleaner",
-      "flush cleaner", "toilet gel", "commode cleaner"
+      "flush cleaner", "toilet gel", "commode cleaner", "phenyl", "finis",
+      "floor cleaner", "dettol liquid", "bleach", "robin bleach"
     ]
   },
   {
-    "canonical_name": "Shampoo",
+    "canonical_name": "Insecticide & Pest Control",
+    "category": "Household & Cleaning",
+    "standard_unit": "can",
+    "aliases": [
+      "mortein", "kingtox", "mosquito spray", "insect spray", "coopex",
+      "pest killer", "cockroach spray"
+    ]
+  },
+  {
+    "canonical_name": "Tissue Paper & Paper Towels",
+    "category": "Household & Cleaning",
+    "standard_unit": "pkt",
+    "aliases": [
+      "tissue", "tissues", "rose petal", "face tissue", "kitchen towel", "toilet paper",
+      "napkins", "party napkins", "soft tissue"
+    ]
+  },
+  {
+    "canonical_name": "Shampoo & Hair Care",
     "category": "Personal Care",
     "standard_unit": "ml",
     "aliases": [
       "shampoo", "head and shoulders", "pantene", "sunsilk", "dove shampoo",
-      "clear shampoo", "loreal shampoo", "hair shampoo", "anti dandruff shampoo"
+      "clear shampoo", "loreal shampoo", "hair shampoo", "anti dandruff shampoo",
+      "conditioner", "hair oil", "amla oil", "coconut oil"
     ]
   },
   {
-    "canonical_name": "Soap (Bath)",
+    "canonical_name": "Soap & Handwash",
     "category": "Personal Care",
     "standard_unit": "pcs",
     "aliases": [
       "soap", "sabun", "bath soap", "lux", "lifebuoy", "dove soap",
       "imperial leather", "dettol soap", "safeguard", "palmolive",
-      "toilet soap", "body wash"
+      "toilet soap", "body wash", "hand wash", "dettol hand wash", "lifebuoy hand wash"
     ]
   },
   {
-    "canonical_name": "Toothpaste",
+    "canonical_name": "Toothpaste & Oral Care",
     "category": "Personal Care",
     "standard_unit": "g",
     "aliases": [
       "toothpaste", "colgate", "close up", "sensodyne", "pepsodent",
-      "dental cream", "tooth gel", "manjan"
+      "dental cream", "tooth gel", "manjan", "toothbrush", "mouthwash"
+    ]
+  },
+  {
+    "canonical_name": "Skin Care & Cosmetics",
+    "category": "Personal Care",
+    "standard_unit": "pcs",
+    "aliases": [
+      "face wash", "cream", "fair and lovely", "glow and lovely", "ponds", "nivea",
+      "body lotion", "sunblock", "vaseline", "petroleum jelly", "talcum powder"
+    ]
+  },
+  {
+    "canonical_name": "Baby Care & Diapers",
+    "category": "Personal Care",
+    "standard_unit": "pkt",
+    "aliases": [
+      "pampers", "diapers", "canbebe", "molfix", "baby wipes", "baby powder",
+      "baby soap", "cerelac", "baby formula"
     ]
   },
   {

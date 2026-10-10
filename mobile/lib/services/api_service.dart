@@ -9,7 +9,7 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  String _baseUrl = 'http://127.0.0.1:8000';
+  String _baseUrl = 'http://192.168.100.78:8000';
 
   String get baseUrl => _baseUrl;
 
@@ -25,14 +25,14 @@ class ApiService {
           _baseUrl = envUrl;
         }
       } else {
-        // If running in Android emulator, 10.0.2.2 connects to host machine
+        // Fallback: Wi-Fi host IP for physical device, 10.0.2.2 for emulator
         if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-          _baseUrl = 'http://10.0.2.2:8000';
+          _baseUrl = 'http://192.168.100.78:8000';
         }
       }
     } catch (_) {
       // Fallback default
-      _baseUrl = 'http://127.0.0.1:8000';
+      _baseUrl = 'http://192.168.100.78:8000';
     }
   }
 

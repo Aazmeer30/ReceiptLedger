@@ -168,9 +168,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       spacing: 8,
                       children: [
                         ActionChip(
-                          label: const Text('Localhost (127.0.0.1:8000)'),
+                          label: const Text('PC Wi-Fi (192.168.100.78:8000)'),
                           onPressed: () {
-                            _urlController.text = 'http://127.0.0.1:8000';
+                            _urlController.text = 'http://192.168.100.78:8000';
                             _saveUrl();
                           },
                         ),
@@ -178,6 +178,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           label: const Text('Android Emulator (10.0.2.2:8000)'),
                           onPressed: () {
                             _urlController.text = 'http://10.0.2.2:8000';
+                            _saveUrl();
+                          },
+                        ),
+                        ActionChip(
+                          label: const Text('Localhost (127.0.0.1:8000)'),
+                          onPressed: () {
+                            _urlController.text = 'http://127.0.0.1:8000';
                             _saveUrl();
                           },
                         ),
