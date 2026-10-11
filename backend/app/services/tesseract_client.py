@@ -44,8 +44,8 @@ _LOCAL_TESSDATA = Path(__file__).resolve().parents[2] / "tessdata"
 if _LOCAL_TESSDATA.exists() and "TESSDATA_PREFIX" not in os.environ:
     os.environ["TESSDATA_PREFIX"] = str(_LOCAL_TESSDATA)
 
-# Primary Tesseract config for full receipt text: PSM 4 assumes a single column of variable sizes
-_FULL_TEXT_CONFIG = "--oem 1 --psm 4"
+# Primary Tesseract config for receipts: PSM 6 assumes a uniform block of text (single column/receipt)
+_FULL_TEXT_CONFIG = "--oem 1 --psm 6"
 # Digit-only config used when validating numeric tokens (prices, quantities)
 _DIGIT_CONFIG = "--psm 10 -c tessedit_char_whitelist=0123456789."
 
@@ -81,7 +81,8 @@ def extract_tokens(
 ) -> List[OCRToken]:
     """
     Run Tesseract on the given grayscale image array.
-    Returns a list of OCRToken objects sorted by reading order (top → bottom, left → right).
+    Uses PSM 6 as primary (uniform text block) and PSM 4 as secondary,
+    merging non-overlapping tokens to maximize recall on thermal and handwritten receipts.
 
     Args:
         image: Preprocessed grayscale 2-D NumPy array.
@@ -92,8 +93,8 @@ def extract_tokens(
         List of OCRToken (text, confidence, bounding_box).
     """
     target_lang = lang if lang is not None else "eng"
-    configs = [_FULL_TEXT_CONFIG, "--oem 1 --psm 6", "--oem 1 --psm 11"]
-    tokens: List[OCRToken] = []
+    configs = ["--oem 1 --psm 6", "--oem 1 --psm 4"]
+    token_passes: List[List[OCRToken]] = []
 
     for cfg in configs:
         try:
@@ -115,11 +116,10 @@ def extract_tokens(
                 continue
 
             conf_raw = data["conf"][i]
-            # Tesseract returns -1 for boxes with no text; skip them
             if conf_raw < 0:
                 continue
 
-            confidence = float(conf_raw) / 100.0  # Normalise to [0, 1]
+            confidence = float(conf_raw) / 100.0
 
             x = data["left"][i]
             y = data["top"][i]
@@ -138,15 +138,29 @@ def extract_tokens(
                     line_id=line_id,
                 )
             )
+        token_passes.append(current_tokens)
 
-        if len(current_tokens) >= 5:
-            tokens = current_tokens
-            break
-        elif len(current_tokens) > len(tokens):
-            tokens = current_tokens
+    if not token_passes:
+        return []
 
-    logger.debug("Tesseract extracted %d tokens.", len(tokens))
-    return tokens
+    # Start with the first pass (PSM 6)
+    merged_tokens: List[OCRToken] = list(token_passes[0])
+
+    # If secondary pass (PSM 4) found tokens, merge any non-overlapping ones
+    if len(token_passes) > 1:
+        for t_sec in token_passes[1]:
+            overlap = False
+            for t_main in merged_tokens:
+                dx = abs(t_sec.bounding_box.x_center - t_main.bounding_box.x_center)
+                dy = abs(t_sec.bounding_box.y_center - t_main.bounding_box.y_center)
+                if dx < 28 and dy < 16:
+                    overlap = True
+                    break
+            if not overlap and len(t_sec.text.strip()) > 0:
+                merged_tokens.append(t_sec)
+
+    logger.debug("Tesseract extracted %d merged tokens.", len(merged_tokens))
+    return merged_tokens
 
 
 def validate_digit_token(image_patch: np.ndarray) -> str:

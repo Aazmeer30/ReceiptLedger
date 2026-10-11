@@ -80,24 +80,12 @@ def classify_receipt_type(image: np.ndarray) -> ReceiptType:
     glyph_density = glyph_count / max(image_area, 1) * 1e6
 
     # ── Decision rule ──────────────────────────────────────────────────────────
-    # Empirical values from sample images after CLAHE preprocessing:
-    #   Printed:     edge=0.13, cv_h=1.24, aspect=1.49, glyph_density=658
-    #   Handwritten: edge=0.21, cv_h=1.35, aspect=4.86, glyph_density=696
-    #
-    # Mean glyph aspect ratio is the STRONGEST discriminator:
-    #   Handwritten receipts have ruling lines / large ink strokes → very wide glyphs
-    #   Printed receipts have compact typeface characters → moderate aspect ratio
-    printed_score = 0
-    if mean_aspect < 2.5:
-        printed_score += 3   # Strong signal: compact chars = printed
-    if cv_h < 1.3:
-        printed_score += 1
-    if edge_density < 0.15:
-        printed_score += 1
+    # Machine-printed characters have strictly regular typeface heights (cv_h < 0.85).
+    # Handwritten slips exhibit irregular stroke heights (cv_h >= 0.88) and notebook ruling.
+    if cv_h >= 0.88 or mean_aspect > 3.0:
+        return ReceiptType.HANDWRITTEN
 
-    if printed_score >= 3:
-        return ReceiptType.PRINTED
-    return ReceiptType.HANDWRITTEN
+    return ReceiptType.PRINTED
 
 
 # ── OCR Routing & Extraction ──────────────────────────────────────────────────
@@ -217,21 +205,45 @@ async def _run_tesseract(
 
 def _estimate_text_slant(tokens: List[OCRToken]) -> float:
     """
-    Estimate dominant text baseline angle (in degrees) from pairs of horizontally
-    proximate tokens across the receipt. Returns 0.0 if insufficient pairs exist.
+    Estimate dominant text baseline angle (in degrees).
+    Prioritises same-line token pairs (via line_id from Tesseract) to eliminate
+    cross-line slope noise, with a fallback to proximate horizontal pairs.
     """
     if len(tokens) < 4:
         return 0.0
 
     slopes = []
+    # 1. Prefer tokens with identical line_id (from Tesseract output)
+    by_line: dict = {}
+    for t in tokens:
+        lid = getattr(t, "line_id", None)
+        if lid is not None:
+            by_line.setdefault(lid, []).append(t)
+
+    for lid, line_toks in by_line.items():
+        if len(line_toks) >= 2:
+            s_line = sorted(line_toks, key=lambda x: x.bounding_box.x_min)
+            for k in range(len(s_line) - 1):
+                t1, t2 = s_line[k], s_line[k + 1]
+                dx = t2.bounding_box.x_center - t1.bounding_box.x_center
+                dy = t2.bounding_box.y_center - t1.bounding_box.y_center
+                if dx > 25 and abs(dy) < 40:
+                    deg = float(np.degrees(np.arctan2(dy, dx)))
+                    if abs(deg) < 15.0:
+                        slopes.append(deg)
+
+    if len(slopes) >= 4:
+        return float(np.median(slopes))
+
+    # 2. Fallback: proximate horizontal pairs across receipt
     by_x = sorted(tokens, key=lambda t: t.bounding_box.x_min)
     n = len(by_x)
     for i in range(n):
-        for j in range(i + 1, min(i + 12, n)):
+        for j in range(i + 1, min(i + 8, n)):
             t1, t2 = by_x[i], by_x[j]
             dx = t2.bounding_box.x_center - t1.bounding_box.x_center
             dy = t2.bounding_box.y_center - t1.bounding_box.y_center
-            if 50 < dx < 400 and abs(dy) < 50:
+            if 50 < dx < 350 and abs(dy) < 25:
                 deg = float(np.degrees(np.arctan2(dy, dx)))
                 if abs(deg) < 15.0:
                     slopes.append(deg)
@@ -257,7 +269,7 @@ def reassemble_lines(
     # Clean out single-character non-alphanumeric noise speckles with low confidence
     valid_tokens = [
         t for t in tokens
-        if len(t.text.strip()) > 1 or t.text.strip().isalnum() or t.confidence >= 0.45
+        if len(t.text.strip()) > 1 or t.text.strip().isalnum() or t.confidence >= 0.35
     ]
     if not valid_tokens:
         valid_tokens = tokens
@@ -283,8 +295,8 @@ def reassemble_lines(
         for line in lines:
             line_y = sum(getattr(x, "_proj_y") for x in line) / len(line)
             line_h = sum(x.bounding_box.y_max - x.bounding_box.y_min for x in line) / len(line)
-            # Tolerance threshold based on text height
-            max_diff = max(11, min(t_h, line_h) * 0.6)
+            # Generous tolerance to keep multi-column items & prices unified on the same row
+            max_diff = max(16, max(t_h, line_h) * 0.70)
 
             if abs(t_y - line_y) <= max_diff:
                 line.append(token)

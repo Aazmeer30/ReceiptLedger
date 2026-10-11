@@ -75,9 +75,13 @@ def preprocess_image(image_bytes: bytes) -> Tuple[np.ndarray, bytes]:
         warped = gray  # Use native grayscale image to preserve thermal print edge sharpness
         logger.debug("Receipt is already upright; preserving native image resolution.")
 
-    # 6 ── CLAHE contrast enhancement ─────────────────────────────────────────
-    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
-    enhanced = clahe.apply(warped)
+    # 6 ── Contrast enhancement: linear percentile stretch ────────────────────
+    # Avoids CLAHE grid artifacts on wood tables, paper folds, and thermal dot matrices
+    p1, p99 = np.percentile(warped, (1, 99))
+    if p99 > p1 + 10:
+        enhanced = np.clip((warped - p1) * 255.0 / (p99 - p1), 0, 255).astype(np.uint8)
+    else:
+        enhanced = warped
 
     # 7 ── Encode to JPEG ──────────────────────────────────────────────────────
     success, buffer = cv2.imencode(".jpg", enhanced, [cv2.IMWRITE_JPEG_QUALITY, 92])

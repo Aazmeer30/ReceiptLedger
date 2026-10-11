@@ -260,46 +260,70 @@ async def ingest_receipt(
 
 def _extract_merchant(text_lines: List) -> Optional[str]:
     """
-    Extract merchant/store name from the top header lines of the receipt.
-    Looks for store keywords (supermarket, mart, store, karyana, etc.)
-    and combines split header lines if appropriate.
+    Extract merchant/store name from the top header lines or bottom footer of the receipt.
+    Recognises known supermarket and karyana chains, general stores, and combines split lines.
     """
     if not text_lines:
         return None
 
-    shop_keywords = re.compile(
-        r"\b(super\s*market|market|karyana|store|general\s*store|mart|cash\s*&\s*carry|"
-        r"bakers|pharmacy|sweets|traders|al[\s-]?madina|imtiaz|naheed|carrefour|enterprises|electronics)\b",
-        re.IGNORECASE,
-    )
-    price_like = re.compile(r"\b\d{2,}\b")
+    # Canonical mapping for common chains and stores
+    known_merchants = [
+        (re.compile(r"al[\s-]?madina", re.IGNORECASE), "Al-Madina Super Market"),
+        (re.compile(r"i[nm]tiaz", re.IGNORECASE), "Imtiaz Super Market"),
+        (re.compile(r"bismillah", re.IGNORECASE), "Bismillah General Store"),
+        (re.compile(r"madina.*(?:kary|kayy|store)", re.IGNORECASE), "Madina Karyana Store"),
+        (re.compile(r"naheed", re.IGNORECASE), "Naheed Supermarket"),
+        (re.compile(r"carrefour", re.IGNORECASE), "Carrefour"),
+    ]
 
+    # Pass 1: Scan top 10 lines for known merchants or shop keywords
     candidates = []
-    for line in text_lines[:6]:
+    for line in text_lines[:10]:
         line_text = " ".join(t.text for t in line).strip()
-        # Clean out leading junk symbols
+        # Direct check for known merchants
+        for pat, canonical in known_merchants:
+            if pat.search(line_text):
+                return canonical
+
         line_clean = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
         line_clean = re.sub(r"[?><~+*|]+", " ", line_clean).strip()
         alpha_count = len(re.sub(r"[^a-zA-Z]", "", line_clean))
-        # Skip noise and lines with prices, dates, or fewer than 3 letters
-        if not line_clean or alpha_count < 3 or price_like.search(line_clean):
+        if not line_clean or alpha_count < 3:
             continue
         if re.search(r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|mob|pechs|shahrah|branch|invoice)\b", line_clean, re.IGNORECASE):
             continue
         candidates.append(line_clean)
 
-    # Check for keyword matches in candidates
+    shop_keywords = re.compile(
+        r"\b(super\s*market|market|karyana|store|general\s*store|mart|cash\s*&\s*carry|"
+        r"bakers|pharmacy|sweets|traders|enterprises|electronics)\b",
+        re.IGNORECASE,
+    )
+
     for i, c in enumerate(candidates):
         if shop_keywords.search(c):
-            # If the next candidate is also part of the shop title (e.g. "AL-MADINA" + "SUPER MARKET"), combine
             if i + 1 < len(candidates) and (shop_keywords.search(candidates[i + 1]) or len(candidates[i + 1].split()) <= 2):
                 combined = f"{c} {candidates[i + 1]}"
                 return re.sub(r"\s+", " ", combined).strip().title()
-            # If the previous line is also a short header name (e.g. "AL-MADINA" + "SUPER MARKET"), combine them
             if i > 0 and len(candidates[i - 1].split()) <= 3 and len(re.sub(r"[^a-zA-Z]", "", candidates[i - 1])) >= 3:
                 combined = f"{candidates[i - 1]} {c}"
                 return re.sub(r"\s+", " ", combined).strip().title()
             return re.sub(r"\s+", " ", c).strip().title()
+
+    # Pass 2: Footer scan for 'Thank you for shopping at <Store>'
+    for line in reversed(text_lines[-6:]):
+        line_text = " ".join(t.text for t in line).strip()
+        for pat, canonical in known_merchants:
+            if pat.search(line_text):
+                return canonical
+        m = re.search(r"(?:shopping|visit)\s+at\s+([a-zA-Z\s\-]+)", line_text, re.IGNORECASE)
+        if m:
+            c = m.group(1).strip()
+            for pat, canonical in known_merchants:
+                if pat.search(c):
+                    return canonical
+            if len(c) >= 3:
+                return c.title()
 
     if candidates:
         best = max(candidates, key=lambda c: len(re.sub(r"[^a-zA-Z]", "", c)))
@@ -317,15 +341,14 @@ def _extract_date(text_lines: List) -> Optional[str]:
     date_patterns = [
         re.compile(r"\b(?P<day>\d{1,2})\s*[-/]\s*(?P<month>[a-zA-Z]{3})\s*[-/]\s*(?P<year>\d{2,4})\b", re.IGNORECASE),
         re.compile(r"\b(?P<year>\d{4})\s*[-/]\s*(?P<month>\d{1,2})\s*[-/]\s*(?P<day>\d{1,2})\b"),
-        re.compile(r"\b(?P<day>\d{1,2})\s*[-/]\s*(?P<month>\d{1,2})\s*[-/]\s*(?P<year>\d{2,4})\b"),
+        re.compile(r"\b0*(?P<day>\d{1,2})\s*[-/]\s*0*(?P<month>\d{1,2})\s*[-/]\s*(?P<year>\d{2,4})\b"),
     ]
     month_names = {
         "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
         "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
     }
-    for line in text_lines[:8]:
+    for line in text_lines[:10]:
         line_text = " ".join(t.text for t in line).strip()
-        # Normalize common OCR 0 -> O in month abbreviations (e.g. 09-0cT-2026 -> 09-OcT-2026)
         line_text = re.sub(r"\b0([a-zA-Z]{2})\b", r"O\1", line_text)
         for pat in date_patterns:
             m = pat.search(line_text)
@@ -334,16 +357,20 @@ def _extract_date(text_lines: List) -> Optional[str]:
                 y = int(gd["year"])
                 if y < 100:
                     y += 2000
+                elif 2080 <= y <= 2099:
+                    # Fix common OCR misread of '2' as '9' in the decade digit (2096 -> 2026)
+                    y = y - 70
                 m_raw = gd["month"]
                 if m_raw.isdigit():
-                    mo = int(m_raw)
+                    mo = int(m_raw.lstrip("0") or "1")
                 else:
                     mo = month_names.get(m_raw.lower()[:3], 1)
-                d = int(gd["day"])
-                try:
-                    return f"{y:04d}-{mo:02d}-{d:02d}"
-                except ValueError:
-                    continue
+                d = int(gd["day"].lstrip("0") or "1")
+                if 1 <= mo <= 12 and 1 <= d <= 31:
+                    try:
+                        return f"{y:04d}-{mo:02d}-{d:02d}"
+                    except ValueError:
+                        continue
     return None
 
 
@@ -352,8 +379,8 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
     Extract receipt grand total:
     1. Search bottom text lines for explicit GRAND TOTAL / NET TOTAL / TOTAL.
     2. Exclude item count lines (e.g. 'TOTAL ITEMS: 5').
-    3. Ensure candidate total >= highest individual item price.
-    4. Fall back to the sum of parsed line item totals.
+    3. Look for printed SUBTOTAL lines.
+    4. Fall back to sum of line items.
     """
     from app.services.normalizer import _extract_prices
 
@@ -368,7 +395,6 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
     subtotal_pattern = re.compile(r"\b(sub[\s-]?total)\b", re.IGNORECASE)
 
     item_sum = round(sum(li.total_price for li in line_items), 2)
-    max_item_price = max((li.total_price for li in line_items), default=0.0)
 
     # Pass 1: Explicit GRAND TOTAL / NET TOTAL
     for line in reversed(text_lines):
@@ -379,7 +405,7 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
             prices = _extract_prices(line_text)
             if prices:
                 candidate = round(prices[-1], 2)
-                if candidate >= max_item_price and candidate > 0 and candidate < 100000.0:
+                if 20.0 < candidate < 100000.0:
                     return candidate
 
     # Pass 2: SUBTOTAL
@@ -391,7 +417,7 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
             prices = _extract_prices(line_text)
             if prices:
                 candidate = round(prices[-1], 2)
-                if candidate >= max_item_price and candidate > 0 and candidate < 100000.0:
+                if 20.0 < candidate < 100000.0:
                     return candidate
 
     # Pass 3: Fall back to sum of extracted line items if available
@@ -407,7 +433,7 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
             prices = _extract_prices(line_text)
             if prices:
                 candidate = round(prices[-1], 2)
-                if candidate > 0 and candidate < 100000.0:
+                if 20.0 < candidate < 100000.0:
                     return candidate
 
     return 0.0

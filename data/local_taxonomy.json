@@ -27,7 +27,7 @@
       "oil", "cooking oil", "dalda", "habib oil", "canola oil", "sunflower oil",
       "vegetable oil", "corn oil", "sufi oil", "mezan oil", "eva oil",
       "kisan oil", "olive oil", "ghee", "banaspati ghee", "tel", "khana tel",
-      "mustard oil", "sarson ka tel", "deshi ghee", "asli ghee"
+      "mustard oil", "sarson ka tel", "deshi ghee", "asli ghee", "cokin oil", "cokin on", "coking oil", "cokin"
     ]
   },
   {
@@ -84,7 +84,7 @@
     "standard_unit": "dzn",
     "aliases": [
       "eggs", "anda", "andey", "dozen eggs", "farm eggs", "brown eggs",
-      "white eggs", "organic eggs", "egg tray", "desi andey"
+      "white eggs", "organic eggs", "egg tray", "desi andey", "eggs 1 dozen", "anday 1dz", "bay 1 dozen", "egg"
     ]
   },
   {
@@ -167,7 +167,7 @@
     "aliases": [
       "tea", "chai patti", "chay pati", "pati", "chai", "green tea",
       "lipton tea", "tapal tea", "supreme tea", "brooke bond tea",
-      "danedar", "tez dum tea", "black tea", "loose tea", "tea bags", "vital tea", "isb tea"
+      "danedar", "tez dum tea", "black tea", "loose tea", "tea bags", "vital tea", "isb tea", "tate tea", "tapal"
     ]
   },
   {
@@ -208,7 +208,7 @@
       "juice", "fruit juice", "mango juice", "nestle juice", "shezan juice",
       "country pure juice", "fresh juice", "tropicana", "minute maid",
       "orange juice", "apple juice", "rooh afza", "jam e shirin", "tang",
-      "fruit drink", "slice juice", "frooto"
+      "fruit drink", "slice juice", "frooto", "juice 1l", "juice 1 ltr", "juice 1ltr"
     ]
   },
   {
@@ -237,7 +237,7 @@
     "aliases": [
       "bread", "double roti", "roti", "naan", "sheermal", "toast bread",
       "white bread", "brown bread", "sandwich bread", "pao", "dawn bread",
-      "wonder bread", "bake parlor bread"
+      "wonder bread", "bake parlor bread", "bread large", "bread small"
     ]
   },
   {
@@ -247,7 +247,8 @@
     "aliases": [
       "dal", "daal", "daal chana", "dal chana", "lentils", "masoor dal", "mash dal", "chana dal",
       "moong dal", "toor dal", "arhar dal", "mixed dal", "whole masoor",
-      "black gram", "split peas", "safaid chana", "white chickpeas", "kala chana", "lobia"
+      "black gram", "split peas", "safaid chana", "white chickpeas", "kala chana", "lobia",
+      "deal chana", "daal chana 1kg", "dal chana 1kg", "deal"
     ]
   },
   {
@@ -256,7 +257,8 @@
     "standard_unit": "kg",
     "aliases": [
       "yogurt", "dahi", "curd", "plain yogurt", "fresh dahi", "set yogurt",
-      "low fat yogurt", "milk yogurt", "packaged dahi", "nestle dahi"
+      "low fat yogurt", "milk yogurt", "packaged dahi", "nestle dahi",
+      "yogurt 500g", "yoourt 500g", "yoourt"
     ]
   },
   {
@@ -265,7 +267,8 @@
     "standard_unit": "g",
     "aliases": [
       "butter", "makhan", "unsalted butter", "salted butter", "lurpak",
-      "country butter", "table butter", "nurpur butter", "adams butter"
+      "country butter", "table butter", "nurpur butter", "adams butter",
+      "butter 200g", "putter 200g", "putter"
     ]
   },
   {
