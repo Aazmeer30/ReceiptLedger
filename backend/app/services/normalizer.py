@@ -94,8 +94,8 @@ _QTY_UNIT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Leading item index (e.g. "1. ", "1, ", "2) ", "<> 2. ", "3- ")
-_LEADING_INDEX_RE = re.compile(r"^\s*[\(\[<>\-~*+.,_]*\s*\d+[\.,\)\-:]\s*")
+# Leading item index (e.g. "1. ", "1, ", "2) ", "<> 2. ", "3- ", "C7 4. ", "Zee 2. ")
+_LEADING_INDEX_RE = re.compile(r"^\s*(?:[A-Za-z0-9\(\[<>\-~*+.,_]+\s+)?\d+[\.,\)\-:]\s*")
 
 # Price / amount (e.g. "Rs.1450", "PKR 200", "1,450.00", "450")
 _PRICE_RE = re.compile(
@@ -187,6 +187,9 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
 
     # Common OCR misreads on Pakistani receipts & handwriting
     ocr_typo_map = {
+        "mikpak": "milkpak",
+        "milpak": "milkpak",
+        "milkpack": "milkpak",
         "putter": "butter",
         "yoourt": "yogurt",
         "dahl": "dahi",
@@ -265,10 +268,20 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     cleaned_line = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
     # Collapse split decimal prices (e.g. "160 .00" -> "160.00")
     cleaned_line = re.sub(r"(\d+)\s+(\.\d{1,2})\b", r"\1\2", cleaned_line)
-    # Correct common OCR confusion between digit '6'/'b' and unit 'g' for standard packaging grams
-    cleaned_line = re.sub(r"\b(100|200|250|400|430|450|500|800|900|1000)[6bB]\b", r"\1g", cleaned_line)
+    # Correct common OCR confusion between digit '6'/'9'/'b' and unit 'g' for standard packaging grams
+    cleaned_line = re.sub(r"\b(100|200|250|400|430|450|500|800|900|1000)[6bB9]\b", r"\1g", cleaned_line)
     # Strip leading line index
     line_body = _LEADING_INDEX_RE.sub("", cleaned_line).strip()
+
+    # Split embedded total marker from the end of an item line (e.g. "Ghee 500 = 3030=" or "Total = 3030")
+    m_embed = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+(?P<total>\d{2,6})\b|[=:]\s*(?P<total2>\d{2,6})\s*[=:]?$", line_body, re.IGNORECASE)
+    if m_embed:
+        item_prefix = line_body[:m_embed.start()].strip()
+        item_prefix = re.sub(r"^(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+", "", item_prefix, flags=re.IGNORECASE).strip()
+        if len(re.sub(r"[^a-zA-Z]", "", item_prefix)) >= 3:
+            line_body = item_prefix
+        else:
+            return None
 
     # Skip lines that are dates
     if _DATE_RE.search(line_body) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni)\b", line_body, re.IGNORECASE):
@@ -319,6 +332,11 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     if total_price > 50000.0 or total_price <= 0.0:
         return None
     if unit_price > 50000.0:
+        unit_price = total_price
+
+    # Guard: If price was mistakenly captured as quantity for a standard item
+    if qty == total_price and total_price >= 30.0:
+        qty = 1.0
         unit_price = total_price
 
     raw_name = _extract_item_name(line_body)

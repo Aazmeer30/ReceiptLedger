@@ -89,10 +89,25 @@ async def ingest_receipt(
     if is_visual_dup:
         logger.info("Visual duplicate detected before OCR: receipt_id=%s", dup_receipt_id)
         existing = store.get_receipt(dup_receipt_id) if dup_receipt_id else None
-        # If the existing entry was an empty failure or has 0 items, allow re-scan instead of blocking
-        if existing and existing.get("total_amount", 0.0) == 0.0 and existing.get("status") == ReceiptStatus.PENDING_REVIEW.value:
-            logger.info("Previous entry %s was an empty failure; allowing re-scan attempt.", dup_receipt_id)
+        # If the existing entry was an empty failure or pending review, allow re-scan attempt
+        if existing and (existing.get("total_amount", 0.0) == 0.0 or existing.get("status") == ReceiptStatus.PENDING_REVIEW.value):
+            logger.info("Previous entry %s was pending review or empty; allowing re-scan attempt.", dup_receipt_id)
         else:
+            existing_items_rows = store.get_line_items_for_receipt(dup_receipt_id) if dup_receipt_id else []
+            existing_items = [
+                LineItemResponse(
+                    item_id=r["id"],
+                    raw_text=r["raw_text"],
+                    canonical_name=r["item_name"],
+                    quantity=r["quantity"],
+                    unit=r["unit"],
+                    unit_price=r["unit_price"],
+                    total_price=r["total_price"],
+                    category=r["category_name"],
+                    confidence_score=r["confidence_score"],
+                    is_verified=r["is_verified"],
+                ) for r in existing_items_rows
+            ]
             return UploadReceiptResponse(
                 receipt_id=dup_receipt_id or str(uuid.uuid4()),
                 status=ReceiptStatus.DUPLICATE,
@@ -102,8 +117,8 @@ async def ingest_receipt(
                 total_amount=existing.get("total_amount", 0.0) if existing else 0.0,
                 confidence_score=existing.get("ocr_confidence", 1.0) if existing else 1.0,
                 needs_review=False,
-                receipt_type=ReceiptType.PRINTED,
-                line_items=[],
+                receipt_type=ReceiptType(existing.get("receipt_type", "PRINTED")) if existing else ReceiptType.PRINTED,
+                line_items=existing_items,
             )
 
     # ── Step 5: Receipt type classification ──────────────────────────────────
@@ -168,18 +183,38 @@ async def ingest_receipt(
 
     if is_dup:
         logger.info("Duplicate receipt detected via text fingerprint (matched=%s).", dup_receipt_id)
-        return UploadReceiptResponse(
-            receipt_id=dup_receipt_id or str(uuid.uuid4()),
-            status=ReceiptStatus.DUPLICATE,
-            is_duplicate=True,
-            merchant_name=merchant_name,
-            receipt_date=receipt_date,
-            total_amount=total_amount,
-            confidence_score=round(mean_confidence, 3),
-            needs_review=False,
-            receipt_type=receipt_type,
-            line_items=[],
-        )
+        existing = store.get_receipt(dup_receipt_id) if dup_receipt_id else None
+        # If the existing entry was an empty failure or pending review, allow re-scan attempt
+        if existing and (existing.get("total_amount", 0.0) == 0.0 or existing.get("status") == ReceiptStatus.PENDING_REVIEW.value):
+            logger.info("Previous entry %s was pending review or empty; allowing re-scan attempt.", dup_receipt_id)
+        else:
+            existing_items_rows = store.get_line_items_for_receipt(dup_receipt_id) if dup_receipt_id else []
+            existing_items = [
+                LineItemResponse(
+                    item_id=r["id"],
+                    raw_text=r["raw_text"],
+                    canonical_name=r["item_name"],
+                    quantity=r["quantity"],
+                    unit=r["unit"],
+                    unit_price=r["unit_price"],
+                    total_price=r["total_price"],
+                    category=r["category_name"],
+                    confidence_score=r["confidence_score"],
+                    is_verified=r["is_verified"],
+                ) for r in existing_items_rows
+            ]
+            return UploadReceiptResponse(
+                receipt_id=dup_receipt_id or str(uuid.uuid4()),
+                status=ReceiptStatus.DUPLICATE,
+                is_duplicate=True,
+                merchant_name=merchant_name,
+                receipt_date=receipt_date,
+                total_amount=total_amount,
+                confidence_score=round(mean_confidence, 3),
+                needs_review=False,
+                receipt_type=receipt_type,
+                line_items=existing_items,
+            )
 
     # ── Step 11: Determine status ────────────────────────────────────────────
     needs_review = (
@@ -270,8 +305,8 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
     known_merchants = [
         (re.compile(r"al[\s-]?madina", re.IGNORECASE), "Al-Madina Super Market"),
         (re.compile(r"i[nm]tiaz", re.IGNORECASE), "Imtiaz Super Market"),
-        (re.compile(r"bismillah", re.IGNORECASE), "Bismillah General Store"),
-        (re.compile(r"madina.*(?:kary|kayy|store)", re.IGNORECASE), "Madina Karyana Store"),
+        (re.compile(r"bis?mi?ll?ah?|بشم|بسم", re.IGNORECASE), "Bismillah General Store"),
+        (re.compile(r"madina.*(?:kary|kayy|store)|مدینہ", re.IGNORECASE), "Madina Karyana Store"),
         (re.compile(r"naheed", re.IGNORECASE), "Naheed Supermarket"),
         (re.compile(r"carrefour", re.IGNORECASE), "Carrefour"),
     ]
@@ -326,8 +361,13 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
                 return c.title()
 
     if candidates:
+        for cand in candidates:
+            if shop_keywords.search(cand):
+                return re.sub(r"\s+", " ", cand).strip().title()
         best = max(candidates, key=lambda c: len(re.sub(r"[^a-zA-Z]", "", c)))
-        if len(re.sub(r"[^a-zA-Z]", "", best)) >= 4:
+        alpha_only = re.sub(r"[^a-zA-Z\s]", "", best).strip()
+        words = alpha_only.split()
+        if len(words) >= 2 and all(len(w) >= 3 for w in words) and len(alpha_only) >= 6:
             return re.sub(r"\s+", " ", best).strip().title()
 
     return None
@@ -389,12 +429,23 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
         re.IGNORECASE,
     )
     grand_total_pattern = re.compile(
-        r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|bill[\s-]?total|total[\s-]?amount|total[\s=:]+)\b",
+        r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|bill[\s-]?total|total[\s-]?amount|total[\s=:]+|tole|totl|ٹوٹل|کل)\b",
         re.IGNORECASE,
     )
     subtotal_pattern = re.compile(r"\b(sub[\s-]?total)\b", re.IGNORECASE)
 
     item_sum = round(sum(li.total_price for li in line_items), 2)
+
+    # Pass 0: Explicit embedded total or '= \d+ =' pattern anywhere in text lines
+    for line in reversed(text_lines):
+        line_text = " ".join(t.text for t in line).strip()
+        if item_count_pattern.search(line_text):
+            continue
+        m = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+(?P<total>\d{2,6})\b|\b=\s*(?P<total2>\d{2,6})\s*[=:]?", line_text, re.IGNORECASE)
+        if m:
+            val = float(m.group("total") or m.group("total2"))
+            if 20.0 < val < 100000.0:
+                return round(val, 2)
 
     # Pass 1: Explicit GRAND TOTAL / NET TOTAL
     for line in reversed(text_lines):

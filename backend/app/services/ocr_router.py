@@ -58,10 +58,16 @@ def classify_receipt_type(image: np.ndarray) -> ReceiptType:
     edges = cv2.Canny(blurred, 50, 150)
     edge_density = np.count_nonzero(edges) / max(edges.size, 1)
 
-    # ── Feature 2: Glyph height variance (connected components) ───────────────
+    # ── Feature 2: Glyph height variance & aspect ratio (connected components) ──
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     _, _, stats, _ = cv2.connectedComponentsWithStats(thresh)
-    valid_stats = [s for s in stats[1:] if 10 < s[cv2.CC_STAT_AREA] < 50000]
+    # Filter out table dividers, border frames, and speckle noise to isolate text glyphs
+    valid_stats = [
+        s for s in stats[1:]
+        if 8 <= s[cv2.CC_STAT_HEIGHT] <= 120
+        and 4 <= s[cv2.CC_STAT_WIDTH] <= 200
+        and s[cv2.CC_STAT_AREA] >= 15
+    ]
 
     if not valid_stats:
         return ReceiptType.PRINTED
@@ -72,17 +78,12 @@ def classify_receipt_type(image: np.ndarray) -> ReceiptType:
     std_h  = float(np.std(heights))
     cv_h   = std_h / mean_h
 
-    # Aspect ratio: printed chars are taller-relative; handwritten glyphs sprawl
+    # Aspect ratio: printed chars are tall and narrow (aspect ~0.55-0.70);
+    # handwritten cursive words sprawl horizontally (aspect > 0.95)
     mean_aspect = float(np.mean([w / (h + 1e-5) for w, h in zip(widths, heights)]))
 
-    glyph_count  = len(valid_stats)
-    image_area   = gray.shape[0] * gray.shape[1]
-    glyph_density = glyph_count / max(image_area, 1) * 1e6
-
     # ── Decision rule ──────────────────────────────────────────────────────────
-    # Machine-printed characters have strictly regular typeface heights (cv_h < 0.85).
-    # Handwritten slips exhibit irregular stroke heights (cv_h >= 0.88) and notebook ruling.
-    if cv_h >= 0.88 or mean_aspect > 3.0:
+    if mean_aspect > 0.92 or cv_h > 0.55:
         return ReceiptType.HANDWRITTEN
 
     return ReceiptType.PRINTED

@@ -65,12 +65,13 @@ def preprocess_image(image_bytes: bytes) -> Tuple[np.ndarray, bytes]:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # 4 ── Corner detection via adaptive paper segmentation ────────────────────
-    quad_pts = _detect_receipt_corners(gray, h_orig * w_orig)
+    img_area = h_orig * w_orig
+    quad_pts = _detect_receipt_corners(gray, img_area)
 
-    # 5 ── Perspective warp (only if quad has substantial perspective distortion) ─
-    if quad_pts is not None and _needs_perspective_warp(quad_pts):
+    # 5 ── Perspective warp (only if quad has substantial perspective distortion or background table) ─
+    if quad_pts is not None and _needs_perspective_warp(quad_pts, img_area):
         warped = _four_point_transform(gray, quad_pts)
-        logger.debug("Perspective warp applied to correct oblique receipt capture.")
+        logger.debug("Perspective warp applied to isolate receipt paper from background.")
     else:
         warped = gray  # Use native grayscale image to preserve thermal print edge sharpness
         logger.debug("Receipt is already upright; preserving native image resolution.")
@@ -226,11 +227,10 @@ def _order_points(pts: np.ndarray) -> np.ndarray:
     return rect
 
 
-def _needs_perspective_warp(pts: Optional[np.ndarray]) -> bool:
+def _needs_perspective_warp(pts: Optional[np.ndarray], image_area: int) -> bool:
     """
-    Check if the detected quadrilateral exhibits significant perspective distortion.
-    If the quad is already an upright rectangle with parallel sides, skipping
-    warp avoids interpolation blurring that degrades faint thermal dot-matrix text.
+    Check if the detected quadrilateral exhibits perspective distortion or
+    occupies a sub-region of a larger desk surface.
     """
     if pts is None:
         return False
@@ -247,10 +247,10 @@ def _needs_perspective_warp(pts: Optional[np.ndarray]) -> bool:
         return False
 
     quad_area = cv2.contourArea(rect)
-    # If the quad covers more than 80% of the image, the user already framed the receipt cleanly
-    # Warping full-frame documents destroys text sharpness with interpolation
-    if quad_area > 0.80 * (max_w * max_h):
-        return False
+    # If the detected paper slip covers less than 85% of the photo, it's lying on a desk
+    # Warping/cropping to the receipt boundaries isolates the text and strips background clutter
+    if quad_area < 0.85 * image_area:
+        return True
 
     w_diff = abs(w_top - w_bottom) / max_w
     h_diff = abs(h_left - h_right) / max_h
@@ -259,7 +259,7 @@ def _needs_perspective_warp(pts: Optional[np.ndarray]) -> bool:
     angle_left = abs(np.degrees(np.arctan2(bl[0] - tl[0], bl[1] - tl[1])))
 
     # Only warp if there is substantial trapezoidal perspective or rotation
-    return (w_diff > 0.15 or h_diff > 0.15 or angle_top > 8.0 or angle_left > 8.0)
+    return (w_diff > 0.12 or h_diff > 0.12 or angle_top > 6.0 or angle_left > 6.0)
 
 
 def _four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
