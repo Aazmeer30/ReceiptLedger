@@ -66,11 +66,13 @@ def preprocess_image(image_bytes: bytes) -> Tuple[np.ndarray, bytes]:
 
     # 4 ── Corner detection via adaptive paper segmentation ────────────────────
     img_area = h_orig * w_orig
-    quad_pts = _detect_receipt_corners(gray, img_area)
+    quad_pts = _detect_receipt_corners(gray, img_area, image_bgr=image)
 
     # 5 ── Perspective warp (only if quad has substantial perspective distortion or background table) ─
     if quad_pts is not None and _needs_perspective_warp(quad_pts, img_area):
         warped = _four_point_transform(gray, quad_pts)
+        if warped.shape[1] > warped.shape[0] * 1.15:
+            warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
         logger.debug("Perspective warp applied to isolate receipt paper from background.")
     else:
         warped = gray  # Use native grayscale image to preserve thermal print edge sharpness
@@ -167,17 +169,49 @@ def _limit_long_edge(image: np.ndarray, max_px: int) -> np.ndarray:
 def _detect_receipt_corners(
     gray: np.ndarray,
     image_area: int,
+    image_bgr: Optional[np.ndarray] = None,
 ) -> Optional[np.ndarray]:
     """
-    Find the four corners of the receipt in the image using Otsu paper
-    segmentation and convex hull / minAreaRect approximation.
+    Find the four corners of the receipt in the image using paper segmentation
+    (color LAB/HSV when available, Otsu/convex hull fallback).
     Only returns a quad if it covers ≥ _MIN_QUAD_AREA_RATIO of the image area.
 
     Returns an (4, 2) float32 array of corner coordinates, or None if not found.
     """
     min_area = image_area * _MIN_QUAD_AREA_RATIO
 
-    # 1. Otsu threshold to separate light receipt paper from darker background
+    # 1. Color paper segmentation in LAB & HSV (isolates paper from wood desk / surface clutter)
+    if image_bgr is not None and len(image_bgr.shape) == 3 and image_bgr.shape[2] == 3:
+        h, w = image_bgr.shape[:2]
+        lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
+        hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+        L = lab[:, :, 0]
+        S = hsv[:, :, 1]
+        # Receipts have high lightness and low saturation relative to wooden or colored desks
+        paper_mask = ((L > 135) & (S < 130)).astype(np.uint8) * 255
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+        clean_mask = cv2.morphologyEx(cv2.morphologyEx(paper_mask, cv2.MORPH_OPEN, k), cv2.MORPH_CLOSE, k)
+        contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        best_c = None
+        best_score = -1.0
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area < min_area or area > 0.95 * image_area:
+                continue
+            rect = cv2.boundingRect(c)
+            cx = rect[0] + rect[2] / 2.0
+            cy = rect[1] + rect[3] / 2.0
+            dist_center = np.hypot(cx - w / 2.0, cy - h / 2.0) / np.hypot(w / 2.0, h / 2.0)
+            score = area * (1.0 - 0.5 * dist_center)
+            if score > best_score:
+                best_score = score
+                best_c = c
+        if best_c is not None:
+            rect = cv2.minAreaRect(best_c)
+            box = cv2.boxPoints(rect)
+            return np.array(box, dtype=np.float32)
+
+    # 2. Grayscale Otsu fallback
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     # If background border is mostly white, invert so paper is white foreground
@@ -185,7 +219,7 @@ def _detect_receipt_corners(
     if np.mean(border) > 127:
         thresh = cv2.bitwise_not(thresh)
 
-    # 2. Morphological close to bridge internal text/line gaps inside the paper
+    # Morphological close to bridge internal text/line gaps inside the paper
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
     closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 

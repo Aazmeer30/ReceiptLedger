@@ -387,9 +387,14 @@ def _extract_date(text_lines: List) -> Optional[str]:
         "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
         "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
     }
-    for line in text_lines[:10]:
+    for line in text_lines[:16]:
         line_text = " ".join(t.text for t in line).strip()
         line_text = re.sub(r"\b0([a-zA-Z]{2})\b", r"O\1", line_text)
+        # Handle handwritten date misreads after Date: (e.g. 'lof1o/23' -> '10/10/23')
+        m_raw = re.search(r"Date:\s*([^\s]+)", line_text, re.IGNORECASE)
+        if m_raw and not re.search(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", m_raw.group(1), re.IGNORECASE):
+            cleaned_d = m_raw.group(1).translate(str.maketrans({'l': '1', 'o': '0', 'O': '0', 'I': '1', 'f': '/'}))
+            line_text = line_text[:m_raw.start(1)] + cleaned_d + line_text[m_raw.end(1):]
         for pat in date_patterns:
             m = pat.search(line_text)
             if m:
@@ -441,9 +446,12 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
         line_text = " ".join(t.text for t in line).strip()
         if item_count_pattern.search(line_text):
             continue
-        m = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+(?P<total>\d{2,6})\b|\b=\s*(?P<total2>\d{2,6})\s*[=:]?", line_text, re.IGNORECASE)
+        cleaned_total = re.sub(r"^[\[\{I|](\d{2,5})", r"1\1", line_text)
+        cleaned_total = re.sub(r"(\s+)[\[\{I|](\d{2,5})", r"\1 1\2", cleaned_total)
+        cleaned_total = re.sub(r"\btele\b|\btoti\b|\btoll\b", "total", cleaned_total, flags=re.IGNORECASE)
+        m = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+(?P<total>\d{2,6})\b|\b=\s*(?P<total2>\d{2,6})\s*[=:]?|(?P<total3>\d{2,6})\s*[=:]|(?P<total4>\d{2,6})\s*=\s*(?:total|کل|ٹوٹل)", cleaned_total, re.IGNORECASE)
         if m:
-            val = float(m.group("total") or m.group("total2"))
+            val = float(m.group("total") or m.group("total2") or m.group("total3") or m.group("total4"))
             if 20.0 < val < 100000.0:
                 return round(val, 2)
 

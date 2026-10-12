@@ -12,6 +12,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+scratch/
 *.traineddata
 env/
 venv/

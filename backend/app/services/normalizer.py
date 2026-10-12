@@ -187,6 +187,9 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
 
     # Common OCR misreads on Pakistani receipts & handwriting
     ocr_typo_map = {
+        "andas": "andey",
+        "anda": "andey",
+        "anday": "andey",
         "mikpak": "milkpak",
         "milpak": "milkpak",
         "milkpack": "milkpak",
@@ -270,6 +273,15 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     cleaned_line = re.sub(r"(\d+)\s+(\.\d{1,2})\b", r"\1\2", cleaned_line)
     # Correct common OCR confusion between digit '6'/'9'/'b' and unit 'g' for standard packaging grams
     cleaned_line = re.sub(r"\b(100|200|250|400|430|450|500|800|900|1000)[6bB9]\b", r"\1g", cleaned_line)
+    # Replace underscores with spaces (e.g. 'Cheeni_3kq_' -> 'Cheeni 3kq ')
+    cleaned_line = re.sub(r"_+", " ", cleaned_line)
+    # Correct handwritten OCR digit misreads before units (e.g. l0k9/l0kg/1Okg/loka -> 10kg, akg/zkg -> 2kg, tke/1ke -> 1kg, 1dz)
+    cleaned_line = re.sub(r"\b[lI|1][oO0]\s*(kg|k9|ke|kq|ka)\b", r"10kg", cleaned_line, flags=re.IGNORECASE)
+    cleaned_line = re.sub(r"\b[aAzZ]\s*(kg|k9|ke|kq)\b", r"2kg", cleaned_line, flags=re.IGNORECASE)
+    cleaned_line = re.sub(r"\b[tT1]ke\b|\b[tT]kg\b", r"1kg", cleaned_line, flags=re.IGNORECASE)
+    cleaned_line = re.sub(r"\b(1|i|l|t)\s*(de|dz|dze|dzn|da)\b", r"1dz", cleaned_line, flags=re.IGNORECASE)
+    # Correct handwritten 1400 price misreads (e.g. '“t4oo', 't400', '14oo')
+    cleaned_line = re.sub(r"(?:[“\"'\b]|^)[tT1]4[oO0]{2}\b", r" 1400", cleaned_line)
     # Strip leading line index
     line_body = _LEADING_INDEX_RE.sub("", cleaned_line).strip()
 
@@ -297,6 +309,12 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
             qty = float(m_struct.group("qty"))
             unit = _normalise_unit(m_struct.group("unit"))
             total_price = float(m_struct.group("price"))
+            # If line has multiple columns (e.g. 'CHAKKI ATTA 5KG 1 700.00 700.00'), check trailing total price
+            remaining_after = line_body[m_struct.end():]
+            extra_prices = _extract_prices(remaining_after)
+            # Only use trailing price if decimal formatted (e.g. '.00') on printed receipts, avoiding Urdu checkmarks (610, 262) on slips
+            if extra_prices and any("." in w for w in remaining_after.split()):
+                total_price = extra_prices[-1]
             unit_price = round(total_price / qty, 2) if qty > 0 else total_price
             match = fuzzy_match(struct_name)
             canonical = match.canonical_name if match else struct_name.title()
@@ -322,12 +340,43 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     line_for_prices = _QTY_WITH_UNIT_RE.sub(" ", line_body)
     prices = _extract_prices(line_for_prices)
     if not prices:
-        prices = _extract_prices(line_body)
-    if not prices:
+        # Check if any standalone price distinct from quantity exists
+        all_candidate_prices = _extract_prices(line_body)
+        prices = [p for p in all_candidate_prices if abs(p - qty) > 0.001 or p >= 30.0]
+
+    raw_name = _extract_item_name(line_body)
+    if not raw_name or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 3:
         return None
 
-    total_price = prices[-1]
-    unit_price = prices[-2] if len(prices) >= 2 else total_price
+    match = fuzzy_match(raw_name)
+
+    if not prices:
+        # Items with quantity but no explicit price written (e.g. daily karyana slip: 'Doodh 2kg', 'Dahi 1kg')
+        # Require an explicit quantity/unit in the text to avoid misclassifying margin noise (e.g. 'cata')
+        if not match or not _QTY_WITH_UNIT_RE.search(line_body):
+            return None
+        if unit == "pcs":
+            unit = match.standard_unit
+        return LineItemCreate(
+            raw_text=line_text,
+            item_name=match.canonical_name,
+            quantity=qty,
+            unit=unit,
+            unit_price=0.0,
+            total_price=0.0,
+            confidence_score=round(max(confidence, 0.85), 3),
+            category=match.category,
+            is_verified=False,
+        )
+
+    has_decimals = any("." in w and any(c.isdigit() for c in w) for w in line_body.split())
+    if has_decimals or len(prices) == 1:
+        total_price = prices[-1]
+        unit_price = prices[-2] if len(prices) >= 2 else total_price
+    else:
+        # Handwritten slip: item price is written first, margin checkmarks/doodles are trailing
+        total_price = prices[0]
+        unit_price = total_price
 
     if total_price > 50000.0 or total_price <= 0.0:
         return None
@@ -339,11 +388,13 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
         qty = 1.0
         unit_price = total_price
 
-    raw_name = _extract_item_name(line_body)
-    if not raw_name or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 3:
-        return None
+    # Guard: If price is unreasonably tiny (<= 15) for a bulk grocery item (kg, dzn, ltr), it's an OCR checkmark/noise
+    if total_price <= 15.0 and unit in ("kg", "dzn", "ltr", "l", "pkt"):
+        if not _QTY_WITH_UNIT_RE.search(line_body):
+            return None
+        total_price = 0.0
+        unit_price = 0.0
 
-    match = fuzzy_match(raw_name)
     if match:
         canonical_name = match.canonical_name
         category = match.category

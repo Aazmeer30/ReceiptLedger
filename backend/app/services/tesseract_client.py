@@ -157,44 +157,49 @@ def extract_tokens(
                     overlap_idx = idx
                     break
             if overlap_idx is not None:
-                # If secondary pass token is higher confidence or has more alphanumeric content, replace it
-                if t_sec.confidence > merged_tokens[overlap_idx].confidence:
+                # If secondary pass token is higher confidence and doesn't truncate text, replace it
+                if t_sec.confidence > merged_tokens[overlap_idx].confidence and len(t_sec.text.strip()) >= len(merged_tokens[overlap_idx].text.strip()):
                     merged_tokens[overlap_idx] = t_sec
             elif len(t_sec.text.strip()) > 0:
                 merged_tokens.append(t_sec)
 
-    # If still very few tokens (< 30), run PSM 11 (sparse text) pass as fallback
-    if len(merged_tokens) < 30:
-        try:
-            d11 = pytesseract.image_to_data(
-                image,
-                lang=target_lang,
-                output_type=Output.DICT,
-                config="--oem 1 --psm 11",
+    # Always merge sparse text (PSM 11) to capture circled totals or faint rows
+    try:
+        d11 = pytesseract.image_to_data(
+            image,
+            lang=target_lang,
+            output_type=Output.DICT,
+            config="--oem 1 --psm 11",
+        )
+        for i in range(len(d11["text"])):
+            txt = d11["text"][i].strip()
+            if not txt or len(txt) == 0:
+                continue
+            conf = float(d11["conf"][i]) / 100.0 if d11["conf"][i] >= 0 else 0.0
+            if conf < 0.10:
+                continue
+            x, y, w, h = d11["left"][i], d11["top"][i], d11["width"][i], d11["height"][i]
+            if w < 4 or h < 6:
+                continue
+            t_sparse = OCRToken(
+                text=txt,
+                confidence=min(conf, 1.0),
+                bounding_box=BoundingBox(x_min=x, y_min=y, x_max=x + w, y_max=y + h),
+                line_id=int(d11["block_num"][i]) * 1000 + int(d11["line_num"][i]),
             )
-            for i in range(len(d11["text"])):
-                txt = d11["text"][i].strip()
-                if not txt:
-                    continue
-                conf = float(d11["conf"][i]) / 100.0 if d11["conf"][i] >= 0 else 0.0
-                if conf < 0.20:
-                    continue
-                x, y, w, h = d11["left"][i], d11["top"][i], d11["width"][i], d11["height"][i]
-                t_sparse = OCRToken(
-                    text=txt,
-                    confidence=min(conf, 1.0),
-                    bounding_box=BoundingBox(x_min=x, y_min=y, x_max=x + w, y_max=y + h),
-                    line_id=int(d11["block_num"][i]) * 1000 + int(d11["line_num"][i]),
-                )
-                overlap = any(
-                    abs(t_sparse.bounding_box.x_center - m.bounding_box.x_center) < 32
-                    and abs(t_sparse.bounding_box.y_center - m.bounding_box.y_center) < 18
-                    for m in merged_tokens
-                )
-                if not overlap:
-                    merged_tokens.append(t_sparse)
-        except Exception as exc:
-            logger.debug("Sparse PSM 11 fallback skipped: %s", exc)
+            overlap_idx = None
+            for idx, m in enumerate(merged_tokens):
+                if (abs(t_sparse.bounding_box.x_center - m.bounding_box.x_center) < 28
+                        and abs(t_sparse.bounding_box.y_center - m.bounding_box.y_center) < 14):
+                    overlap_idx = idx
+                    break
+            if overlap_idx is not None:
+                if t_sparse.confidence > merged_tokens[overlap_idx].confidence and len(t_sparse.text.strip()) >= len(merged_tokens[overlap_idx].text.strip()):
+                    merged_tokens[overlap_idx] = t_sparse
+            else:
+                merged_tokens.append(t_sparse)
+    except Exception as exc:
+        logger.debug("Sparse PSM 11 fallback skipped: %s", exc)
 
     logger.debug("Tesseract extracted %d merged tokens.", len(merged_tokens))
     return merged_tokens

@@ -296,8 +296,8 @@ def reassemble_lines(
         for line in lines:
             line_y = sum(getattr(x, "_proj_y") for x in line) / len(line)
             line_h = sum(x.bounding_box.y_max - x.bounding_box.y_min for x in line) / len(line)
-            # Generous tolerance to keep multi-column items & prices unified on the same row
-            max_diff = max(16, max(t_h, line_h) * 0.70)
+            # Controlled tolerance to keep item names & prices unified on the same row without merging adjacent rows
+            max_diff = min(20, max(12, min(t_h, line_h) * 0.65))
 
             if abs(t_y - line_y) <= max_diff:
                 line.append(token)
