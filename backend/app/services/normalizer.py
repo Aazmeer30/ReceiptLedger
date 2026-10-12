@@ -83,7 +83,8 @@ _QTY_UNIT_PRICE_RE = re.compile(
     r"(?P<qty>\d+(?:\.\d+)?)\s*"
     r"(?P<unit>kg|k9|ke|kq|k|g|gm|gram|ltr|liter|litre|l|ml|pkt|packet|pcs|pc|dzn|dozen|dz)\s*"
     r"(?:[xX@=:>\-]\s*)?"
-    r"(?P<price>\d{2,5}(?:\.\d{1,2})?)",
+    r"(?P<price>\d{2,5}(?:\.\d{1,2})?)"
+    r"(?!\s*(?:kg|k9|ke|kq|k|g|gm|gram|ltr|liter|litre|l|ml|pkt|packet|pcs|pc|dzn|dozen|dz)\b)",
     re.IGNORECASE,
 )
 
@@ -120,7 +121,7 @@ _NOISE_RE = re.compile(
     r"thank\s*you|branch|tel|phone|mob|mobile|cell|whatsapp|helpline|call|contact|"
     r"raast|transfer|transferred|stan|rrn|iban|account|acct|bank|easypaisa|jazzcash|nayapay|sadapay|wallet|"
     r"pechs|shahrah|karachi|clifton|khi|lahore|islamabad|rawalpindi|jaipur|rajasthan|"
-    r"super\s*market|general\s*store|karyana\s*store|karyana|bismillah|imtiaz|al[\s-]?madina|supermarket"
+    r"super\s*market|general\s*store|karyana\s*store|karyana|bismillah|imtiaz|al[\s-]?madina|supermarket|subhan|chaudhry|fazal|naheed"
     r")\b",
     re.IGNORECASE,
 )
@@ -282,6 +283,8 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     cleaned_line = re.sub(r"\b(1|i|l|t)\s*(de|dz|dze|dzn|da)\b", r"1dz", cleaned_line, flags=re.IGNORECASE)
     # Correct handwritten 1400 price misreads (e.g. '“t4oo', 't400', '14oo')
     cleaned_line = re.sub(r"(?:[“\"'\b]|^)[tT1]4[oO0]{2}\b", r" 1400", cleaned_line)
+    # Collapse duplicate adjacent quantity tokens (e.g. '10kg 10kg' -> '10kg')
+    cleaned_line = re.sub(r"\b(\d+(?:\.\d+)?\s*(?:kg|k9|ke|kq|ka|g|gm|ltr|l|ml|pkt|dzn|dz))\s+\1\b", r"\1", cleaned_line, flags=re.IGNORECASE)
     # Strip leading line index
     line_body = _LEADING_INDEX_RE.sub("", cleaned_line).strip()
 
@@ -296,7 +299,7 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
             return None
 
     # Skip lines that are dates
-    if _DATE_RE.search(line_body) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni)\b", line_body, re.IGNORECASE):
+    if _DATE_RE.search(line_body) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", line_body, re.IGNORECASE):
         return None
 
     # ── Path A: Direct structured (Item Name + Qty + Unit + Price) match ──────
@@ -493,9 +496,9 @@ def _is_noise_line(text: str) -> bool:
         return True
     if _NOISE_RE.search(stripped):
         # Exclude header lines from line items unless grocery items are present
-        if not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni)\b", stripped):
+        if not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", stripped):
             return True
-    if _DATE_RE.search(stripped) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni)\b", stripped):
+    if _DATE_RE.search(stripped) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", stripped):
         return True
     if re.match(r"^[-=*_.~^|#]+$", stripped):
         return True

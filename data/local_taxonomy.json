@@ -27,7 +27,7 @@
       "oil", "cooking oil", "dalda", "habib oil", "canola oil", "sunflower oil",
       "vegetable oil", "corn oil", "sufi oil", "mezan oil", "eva oil",
       "kisan oil", "olive oil", "ghee", "banaspati ghee", "tel", "khana tel",
-      "mustard oil", "sarson ka tel", "deshi ghee", "asli ghee", "cokin oil", "cokin on", "coking oil", "cokin"
+      "mustard oil", "sarson ka tel", "deshi ghee", "asli ghee", "cokin oil", "cokin on", "coking oil", "cokin", "cookinon oil", "cookinon"
     ]
   },
   {
@@ -187,7 +187,7 @@
       "biscuits", "biscuit", "cookies", "rio biscuits", "peek freans",
       "oreo", "marie biscuits", "prince biscuits", "digestive", "cracker",
       "saltine", "nankhatai", "cake rusk", "rusk", "sooper", "tictac", "cup cake",
-      "pound cake", "fruit cake"
+      "pound cake", "fruit cake", "tuc", "tuc biscuits", "tuc crackers"
     ]
   },
   {
@@ -248,7 +248,7 @@
       "dal", "daal", "daal chana", "dal chana", "lentils", "masoor dal", "mash dal", "chana dal",
       "moong dal", "toor dal", "arhar dal", "mixed dal", "whole masoor",
       "black gram", "split peas", "safaid chana", "white chickpeas", "kala chana", "lobia",
-      "deal chana", "daal chana 1kg", "dal chana 1kg", "deal"
+      "deal chana", "daal chana 1kg", "dal chana 1kg", "deal", "daal mash", "dal mash"
     ]
   },
   {
@@ -391,6 +391,23 @@
       "top up", "topup", "recharge", "jazz", "zong", "ufone", "telenor",
       "warid", "mobile recharge", "scratch card", "sms package",
       "data package", "internet package"
+    ]
+  },
+  {
+    "canonical_name": "OTC Medicines & First Aid",
+    "category": "Health & Pharmacy",
+    "standard_unit": "pkt",
+    "aliases": [
+      "panadol", "panadol extra", "disprin", "paracetamol", "sancos", "sancos syrup",
+      "cough syrup", "dettol antiseptic", "surgical mask", "face mask", "bandage", "bandaid", "antiseptic"
+    ]
+  },
+  {
+    "canonical_name": "Ginger & Garlic",
+    "category": "Groceries & Food",
+    "standard_unit": "kg",
+    "aliases": [
+      "adrak", "lehsan", "ginger", "garlic", "adrak lehsan", "ginger garlic", "ginger garlic paste"
     ]
   }
 ]

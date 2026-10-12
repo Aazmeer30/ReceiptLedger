@@ -309,6 +309,9 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         (re.compile(r"madina.*(?:kary|kayy|store)|مدینہ", re.IGNORECASE), "Madina Karyana Store"),
         (re.compile(r"naheed", re.IGNORECASE), "Naheed Supermarket"),
         (re.compile(r"carrefour", re.IGNORECASE), "Carrefour"),
+        (re.compile(r"fazal[\s-]?din|chemist|pharmacy", re.IGNORECASE), "Fazal Din & Sons Chemists"),
+        (re.compile(r"subhan[\s-]?allah|سبحان", re.IGNORECASE), "Subhan Allah Karyana Store"),
+        (re.compile(r"chaudhry|چوہدری|sabzi", re.IGNORECASE), "Chaudhry Sabzi & Fruit Shop"),
     ]
 
     # Pass 1: Scan top 10 lines for known merchants or shop keywords

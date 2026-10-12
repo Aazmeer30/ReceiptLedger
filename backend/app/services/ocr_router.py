@@ -105,12 +105,15 @@ async def route_and_extract(
     """
     async with _ocr_semaphore:
         if receipt_type == ReceiptType.PRINTED:
-            return await _extract_printed(image_bytes)
+            return await _extract_printed(image_bytes, image=image)
         else:
             return await _extract_handwritten(image)
 
 
-async def _extract_printed(image_bytes: bytes) -> Tuple[List[OCRToken], str]:
+async def _extract_printed(
+    image_bytes: bytes,
+    image: Optional[np.ndarray] = None,
+) -> Tuple[List[OCRToken], str]:
     """
     Printed path: Cloud Vision → Tesseract fallback.
     """
@@ -134,8 +137,8 @@ async def _extract_printed(image_bytes: bytes) -> Tuple[List[OCRToken], str]:
         except Exception as exc:
             logger.warning("Cloud Vision unavailable (%s). Falling back to Tesseract.", exc)
 
-    # Fallback: Tesseract (printed path uses clean English)
-    return await _run_tesseract(image_bytes, lang="eng")
+    # Fallback: Tesseract (printed path uses clean English on preprocessed image)
+    return await _run_tesseract(image_bytes, lang="eng", image=image)
 
 
 async def _extract_handwritten(image: np.ndarray) -> Tuple[List[OCRToken], str]:
@@ -230,7 +233,7 @@ def _estimate_text_slant(tokens: List[OCRToken]) -> float:
                 dy = t2.bounding_box.y_center - t1.bounding_box.y_center
                 if dx > 25 and abs(dy) < 40:
                     deg = float(np.degrees(np.arctan2(dy, dx)))
-                    if abs(deg) < 15.0:
+                    if abs(deg) < 28.0:
                         slopes.append(deg)
 
     if len(slopes) >= 4:
@@ -246,7 +249,7 @@ def _estimate_text_slant(tokens: List[OCRToken]) -> float:
             dy = t2.bounding_box.y_center - t1.bounding_box.y_center
             if 50 < dx < 350 and abs(dy) < 25:
                 deg = float(np.degrees(np.arctan2(dy, dx)))
-                if abs(deg) < 15.0:
+                if abs(deg) < 28.0:
                     slopes.append(deg)
 
     if slopes:
