@@ -318,12 +318,21 @@ def _four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
         logger.debug("Detected quad too small (%dx%d), skipping warp.", w_max, h_max)
         return image
 
+    # Ensure minimum width of 800px for optimal OCR character height (x-height >= 25px)
+    target_w = w_max
+    target_h = h_max
+    if w_max < 800:
+        scale = min(800.0 / w_max, 2400.0 / max(h_max, 1))
+        if scale > 1.0:
+            target_w = int(w_max * scale)
+            target_h = int(h_max * scale)
+
     dst = np.array(
-        [[0, 0], [w_max - 1, 0], [w_max - 1, h_max - 1], [0, h_max - 1]],
+        [[0, 0], [target_w - 1, 0], [target_w - 1, target_h - 1], [0, target_h - 1]],
         dtype=np.float32,
     )
     M = cv2.getPerspectiveTransform(rect, dst)
-    return cv2.warpPerspective(image, M, (w_max, h_max))
+    return cv2.warpPerspective(image, M, (target_w, target_h), flags=cv2.INTER_CUBIC)
 
 
 def _center_crop(image: np.ndarray, ratio: float = 0.90) -> np.ndarray:

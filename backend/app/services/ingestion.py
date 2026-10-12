@@ -312,6 +312,10 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         (re.compile(r"fazal[\s-]?din|chemist|pharmacy", re.IGNORECASE), "Fazal Din & Sons Chemists"),
         (re.compile(r"subhan[\s-]?allah|سبحان", re.IGNORECASE), "Subhan Allah Karyana Store"),
         (re.compile(r"chaudhry|چوہدری|sabzi", re.IGNORECASE), "Chaudhry Sabzi & Fruit Shop"),
+        (re.compile(r"tony['’]?s", re.IGNORECASE), "Tony's Pizzeria"),
+        (re.compile(r"book\s*ta", re.IGNORECASE), "Book Talk Sdn Bhd"),
+        (re.compile(r"morganfield", re.IGNORECASE), "Morganfield's"),
+        (re.compile(r"gin\s*kee", re.IGNORECASE), "Syarikat Perniagaan Gin Kee"),
     ]
 
     # Pass 1: Scan top 10 lines for known merchants or shop keywords
@@ -328,13 +332,21 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         alpha_count = len(re.sub(r"[^a-zA-Z]", "", line_clean))
         if not line_clean or alpha_count < 3:
             continue
-        if re.search(r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|mob|pechs|shahrah|branch|invoice)\b", line_clean, re.IGNORECASE):
+        if re.search(
+            r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|mob|pechs|shahrah|branch|invoice|"
+            r"description|qty|amount|price|rate|disc|discount|table|cashier|server|guest|pax|"
+            r"tax|gst|vat|co\s*reg|gst\s*reg|reg\s*no|jalan|jln|taman|lorong|floor|lot\s*\d+|"
+            r"avenue|street|road|damansara|shah\s*alam|johor|grindelwald)\b",
+            line_clean, re.IGNORECASE,
+        ):
             continue
         candidates.append(line_clean)
 
     shop_keywords = re.compile(
         r"\b(super\s*market|market|karyana|store|general\s*store|mart|cash\s*&\s*carry|"
-        r"bakers|pharmacy|sweets|traders|enterprises|electronics)\b",
+        r"bakers|pharmacy|sweets|traders|trading|enterprises|electronics|"
+        r"sdn\s*bhd|bhd|ltd|limited|co\b|company|delights|kitchen|kitchenette|"
+        r"restaurant|cafe|bistro|grill|diner|pizza|pizzeria|bakery|book\s*ta)\b",
         re.IGNORECASE,
     )
 
@@ -378,19 +390,20 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
 
 def _extract_date(text_lines: List) -> Optional[str]:
     """
-    Extract receipt date from text lines (e.g. 09-OCT-2026, 10/10/2026, 2024-05-15).
+    Extract receipt date from text lines (e.g. 09-OCT-2026, 10/10/2026, 2024-05-15, 4/27/18, 30.07.2007).
     Converts to ISO-8601 YYYY-MM-DD.
     """
     date_patterns = [
-        re.compile(r"\b(?P<day>\d{1,2})\s*[-/]\s*(?P<month>[a-zA-Z]{3})\s*[-/]\s*(?P<year>\d{2,4})\b", re.IGNORECASE),
-        re.compile(r"\b(?P<year>\d{4})\s*[-/]\s*(?P<month>\d{1,2})\s*[-/]\s*(?P<day>\d{1,2})\b"),
-        re.compile(r"\b0*(?P<day>\d{1,2})\s*[-/]\s*0*(?P<month>\d{1,2})\s*[-/]\s*(?P<year>\d{2,4})\b"),
+        re.compile(r"\b(?P<day>\d{1,2})\s*[\.\-/]\s*(?P<month>[a-zA-Z]{3})\s*[\.\-/]\s*(?P<year>\d{2,4})\b", re.IGNORECASE),
+        re.compile(r"\b(?P<year>\d{4})\s*[\.\-/]\s*(?P<month>\d{1,2})\s*[\.\-/]\s*(?P<day>\d{1,2})\b"),
+        re.compile(r"\b0*(?P<p1>\d{1,2})\s*[\.\-/]\s*0*(?P<p2>\d{1,2})\s*[\.\-/]\s*(?P<year>\d{2,4})\b"),
     ]
     month_names = {
         "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
         "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
     }
-    for line in text_lines[:16]:
+    search_lines = text_lines[:20] + text_lines[-10:] if len(text_lines) > 20 else text_lines
+    for line in search_lines:
         line_text = " ".join(t.text for t in line).strip()
         line_text = re.sub(r"\b0([a-zA-Z]{2})\b", r"O\1", line_text)
         # Handle handwritten date misreads after Date: (e.g. 'lof1o/23' -> '10/10/23')
@@ -408,12 +421,23 @@ def _extract_date(text_lines: List) -> Optional[str]:
                 elif 2080 <= y <= 2099:
                     # Fix common OCR misread of '2' as '9' in the decade digit (2096 -> 2026)
                     y = y - 70
-                m_raw = gd["month"]
-                if m_raw.isdigit():
-                    mo = int(m_raw.lstrip("0") or "1")
+
+                if "p1" in gd:
+                    v1 = int(gd["p1"].lstrip("0") or "1")
+                    v2 = int(gd["p2"].lstrip("0") or "1")
+                    # If v2 > 12 and v1 <= 12, it is MM/DD/YYYY (US style, e.g. 4/27/18)
+                    if v2 > 12 and v1 <= 12:
+                        mo, d = v1, v2
+                    else:
+                        d, mo = v1, v2
                 else:
-                    mo = month_names.get(m_raw.lower()[:3], 1)
-                d = int(gd["day"].lstrip("0") or "1")
+                    m_raw = gd["month"]
+                    if m_raw.isdigit():
+                        mo = int(m_raw.lstrip("0") or "1")
+                    else:
+                        mo = month_names.get(m_raw.lower()[:3], 1)
+                    d = int(gd["day"].lstrip("0") or "1")
+
                 if 1 <= mo <= 12 and 1 <= d <= 31:
                     try:
                         return f"{y:04d}-{mo:02d}-{d:02d}"
@@ -425,7 +449,7 @@ def _extract_date(text_lines: List) -> Optional[str]:
 def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
     """
     Extract receipt grand total:
-    1. Search bottom text lines for explicit GRAND TOTAL / NET TOTAL / TOTAL.
+    1. Search bottom text lines for explicit GRAND TOTAL / NET TOTAL / TOTAL / ROUNDED TOTAL.
     2. Exclude item count lines (e.g. 'TOTAL ITEMS: 5').
     3. Look for printed SUBTOTAL lines.
     4. Fall back to sum of line items.
@@ -437,7 +461,9 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
         re.IGNORECASE,
     )
     grand_total_pattern = re.compile(
-        r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|bill[\s-]?total|total[\s-]?amount|total[\s=:]+|tole|totl|ٹوٹل|کل)\b",
+        r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|"
+        r"bill[\s-]?total|total[\s-]?amount|round(?:ed|ing)?[\s-]?total|total[\s=:]+|"
+        r"tole|totl|ٹوٹل|کل)\b",
         re.IGNORECASE,
     )
     subtotal_pattern = re.compile(r"\b(sub[\s-]?total)\b", re.IGNORECASE)
@@ -449,25 +475,31 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
         line_text = " ".join(t.text for t in line).strip()
         if item_count_pattern.search(line_text):
             continue
-        cleaned_total = re.sub(r"^[\[\{I|](\d{2,5})", r"1\1", line_text)
+        cleaned_total = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", line_text)
+        cleaned_total = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", cleaned_total)
+        cleaned_total = re.sub(r"\b(?:RM|CHF|EUR|USD|\$|PKR|Rs\.?)\b", " ", cleaned_total, flags=re.IGNORECASE)
+        cleaned_total = re.sub(r"^[\[\{I|](\d{2,5})", r"1\1", cleaned_total)
         cleaned_total = re.sub(r"(\s+)[\[\{I|](\d{2,5})", r"\1 1\2", cleaned_total)
         cleaned_total = re.sub(r"\btele\b|\btoti\b|\btoll\b", "total", cleaned_total, flags=re.IGNORECASE)
-        m = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_]+(?P<total>\d{2,6})\b|\b=\s*(?P<total2>\d{2,6})\s*[=:]?|(?P<total3>\d{2,6})\s*[=:]|(?P<total4>\d{2,6})\s*=\s*(?:total|کل|ٹوٹل)", cleaned_total, re.IGNORECASE)
+        m = re.search(r"(?:total|tole|totl|ٹوٹل|کل)[\s=:_;]+(?P<total>\d+(?:\.\d{1,2})?)\b|\b=\s*(?P<total2>\d+(?:\.\d{1,2})?)\s*[=:]?|(?P<total3>\d{2,6})\s*=\s*(?:total|کل|ٹوٹل)", cleaned_total, re.IGNORECASE)
         if m:
-            val = float(m.group("total") or m.group("total2") or m.group("total3") or m.group("total4"))
-            if 20.0 < val < 100000.0:
+            val = float(m.group("total") or m.group("total2") or m.group("total3"))
+            if 0.50 <= val <= 100000.0:
                 return round(val, 2)
 
-    # Pass 1: Explicit GRAND TOTAL / NET TOTAL
+    # Pass 1: Explicit GRAND TOTAL / NET TOTAL / ROUNDED TOTAL
     for line in reversed(text_lines):
         line_text = " ".join(t.text for t in line).strip()
         if item_count_pattern.search(line_text):
             continue
-        if grand_total_pattern.search(line_text):
-            prices = _extract_prices(line_text)
+        line_text_norm = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", line_text)
+        line_text_norm = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", line_text_norm)
+        line_text_norm = re.sub(r"\b(?:RM|CHF|EUR|USD|\$|PKR|Rs\.?)\b", " ", line_text_norm, flags=re.IGNORECASE)
+        if grand_total_pattern.search(line_text_norm):
+            prices = _extract_prices(line_text_norm)
             if prices:
                 candidate = round(prices[-1], 2)
-                if 20.0 < candidate < 100000.0:
+                if 0.50 <= candidate <= 100000.0:
                     return candidate
 
     # Pass 2: SUBTOTAL
@@ -475,28 +507,34 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
         line_text = " ".join(t.text for t in line).strip()
         if item_count_pattern.search(line_text):
             continue
-        if subtotal_pattern.search(line_text):
-            prices = _extract_prices(line_text)
+        line_text_norm = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", line_text)
+        line_text_norm = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", line_text_norm)
+        line_text_norm = re.sub(r"\b(?:RM|CHF|EUR|USD|\$|PKR|Rs\.?)\b", " ", line_text_norm, flags=re.IGNORECASE)
+        if subtotal_pattern.search(line_text_norm):
+            prices = _extract_prices(line_text_norm)
             if prices:
                 candidate = round(prices[-1], 2)
-                if 20.0 < candidate < 100000.0:
+                if 0.50 <= candidate <= 100000.0:
                     return candidate
 
-    # Pass 3: Fall back to sum of extracted line items if available
-    if item_sum > 0:
-        return item_sum
-
-    # Pass 4: Any generic 'total' line with a reasonable price
+    # Pass 3: Any generic 'total' line with a price (runs before line item sum to respect printed bill total)
     for line in reversed(text_lines):
         line_text = " ".join(t.text for t in line).strip()
         if item_count_pattern.search(line_text):
             continue
-        if re.search(r"\btotal\b", line_text, re.IGNORECASE):
-            prices = _extract_prices(line_text)
+        line_text_norm = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", line_text)
+        line_text_norm = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", " ", line_text_norm)
+        line_text_norm = re.sub(r"\b(?:RM|CHF|EUR|USD|\$|PKR|Rs\.?)\b", " ", line_text_norm, flags=re.IGNORECASE)
+        if re.search(r"\btotal\b", line_text_norm, re.IGNORECASE):
+            prices = _extract_prices(line_text_norm)
             if prices:
                 candidate = round(prices[-1], 2)
-                if 20.0 < candidate < 100000.0:
+                if 0.50 <= candidate <= 100000.0:
                     return candidate
+
+    # Pass 4: Fall back to sum of extracted line items if available
+    if item_sum > 0:
+        return item_sum
 
     return 0.0
 

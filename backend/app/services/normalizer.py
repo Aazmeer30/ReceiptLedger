@@ -121,6 +121,8 @@ _NOISE_RE = re.compile(
     r"thank\s*you|branch|tel|phone|mob|mobile|cell|whatsapp|helpline|call|contact|"
     r"raast|transfer|transferred|stan|rrn|iban|account|acct|bank|easypaisa|jazzcash|nayapay|sadapay|wallet|"
     r"pechs|shahrah|karachi|clifton|khi|lahore|islamabad|rawalpindi|jaipur|rajasthan|"
+    r"jalan|jln|taman|lorong|floor|lot\s*\d+|avenue|damansara|shah\s*alam|johor\s*bahru|grindelwald|entspricht|mwst|"
+    r"cashier|server|table|pax|guest\s*check|order\s*taker|open\s*:\s*\d+|doc\s*no|document\s*no|inv\s*:\s*|invoice\s*no|co\s*reg|gst\s*reg|reg\s*no|tax\s*invoice|cash\s*bill|tel/fax|fax|"
     r"super\s*market|general\s*store|karyana\s*store|karyana|bismillah|imtiaz|al[\s-]?madina|supermarket|subhan|chaudhry|fazal|naheed"
     r")\b",
     re.IGNORECASE,
@@ -270,6 +272,10 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     """
     # Clean leading noise characters
     cleaned_line = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
+    # Strip long numeric barcodes / SKUs (> 6 digits, e.g. 9556930040116, 9997368063013, 002046390272)
+    cleaned_line = re.sub(r"\b\d{7,16}\b", " ", cleaned_line)
+    # Convert decimal commas to dots when flanked by digits (e.g. "9,00" -> "9.00", "74,90" -> "74.90")
+    cleaned_line = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", cleaned_line)
     # Collapse split decimal prices (e.g. "160 .00" -> "160.00")
     cleaned_line = re.sub(r"(\d+)\s+(\.\d{1,2})\b", r"\1\2", cleaned_line)
     # Correct common OCR confusion between digit '6'/'9'/'b' and unit 'g' for standard packaging grams
@@ -478,8 +484,8 @@ def _extract_item_name(text: str) -> str:
     cleaned = _PRICE_RE.sub("", cleaned)
     cleaned = _QTY_WITH_UNIT_RE.sub("", cleaned)
     cleaned = _QTY_UNIT_RE.sub("", cleaned)
-    cleaned = re.sub(r"\b(?:Rs\.?|PKR)\b", " ", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"[×xX@\-–/|*#:~^\\=]", " ", cleaned)
+    cleaned = re.sub(r"\b(?:Rs\.?|PKR|RM|CHF|EUR|USD|\$|SR|GST|VAT|TX)\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[×xX@\-–/|*#:~^\\=\(\)\[\]\{\}“”\"]", " ", cleaned)
     cleaned = re.sub(r"\b\d+\b", "", cleaned)
     cleaned = " ".join(cleaned.split()).strip(".,- ")
     return cleaned if len(cleaned) >= 2 else ""
