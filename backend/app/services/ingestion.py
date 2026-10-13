@@ -315,7 +315,8 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         (re.compile(r"tony['’]?s", re.IGNORECASE), "Tony's Pizzeria"),
         (re.compile(r"book\s*ta", re.IGNORECASE), "Book Talk Sdn Bhd"),
         (re.compile(r"morganfield", re.IGNORECASE), "Morganfield's"),
-        (re.compile(r"gin\s*kee", re.IGNORECASE), "Syarikat Perniagaan Gin Kee"),
+        (re.compile(r"saathimart", re.IGNORECASE), "Saathimart"),
+        (re.compile(r"99\s*speed\s*mart", re.IGNORECASE), "99 Speed Mart"),
     ]
 
     # Pass 1: Scan top 10 lines for known merchants or shop keywords
@@ -335,7 +336,7 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         if re.search(
             r"\b(date|pate|time|tne|ntn|nin|strn|pos|tel|phone|mob|pechs|shahrah|branch|invoice|"
             r"description|qty|amount|price|rate|disc|discount|table|cashier|server|guest|pax|"
-            r"tax|gst|vat|co\s*reg|gst\s*reg|reg\s*no|jalan|jln|taman|lorong|floor|lot\s*\d+|"
+            r"tax|gst|vat|co(?:mpany)?\s*reg|reg\s*ma|gst\s*reg|reg\s*no|jalan|jln|taman|lorong|floor|lot\s*\d+|"
             r"avenue|street|road|damansara|shah\s*alam|johor|grindelwald)\b",
             line_clean, re.IGNORECASE,
         ):

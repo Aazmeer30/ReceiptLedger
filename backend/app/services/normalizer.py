@@ -122,6 +122,8 @@ _NOISE_RE = re.compile(
     r"raast|transfer|transferred|stan|rrn|iban|account|acct|bank|easypaisa|jazzcash|nayapay|sadapay|wallet|"
     r"pechs|shahrah|karachi|clifton|khi|lahore|islamabad|rawalpindi|jaipur|rajasthan|"
     r"jalan|jln|taman|lorong|floor|lot\s*\d+|avenue|damansara|shah\s*alam|johor\s*bahru|grindelwald|entspricht|mwst|"
+    r"selangor|kembangan|klang|bandar|seksyen|bukit|raja|setia\s*alam|utama|kathmandu|narephat|batangkali|subtotat|tender|"
+    r"service\s*charge|service\s*tax|saving|rounding|co(?:mpany)?\s*reg|reg\s*ma|table\s*:\s*|able\s*:\s*bar|speed\s*mart|"
     r"cashier|server|table|pax|guest\s*check|order\s*taker|open\s*:\s*\d+|doc\s*no|document\s*no|inv\s*:\s*|invoice\s*no|co\s*reg|gst\s*reg|reg\s*no|tax\s*invoice|cash\s*bill|tel/fax|fax|"
     r"super\s*market|general\s*store|karyana\s*store|karyana|bismillah|imtiaz|al[\s-]?madina|supermarket|subhan|chaudhry|fazal|naheed"
     r")\b",
@@ -225,9 +227,7 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
         for alias in candidates:
             alias_lower = alias.lower()
             # If alias is a key product word contained in the query
-            if len(alias_lower) >= 4 and any(w == alias_lower for w in corrected_words):
-                return entry
-            if len(alias_lower) >= 4 and alias_lower in corrected_query:
+            if len(alias_lower) >= 4 and (any(w == alias_lower for w in corrected_words) or re.search(r"\b" + re.escape(alias_lower) + r"\b", corrected_query)):
                 return entry
 
     # 3. Levenshtein ratio matching
@@ -274,6 +274,8 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
     cleaned_line = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
     # Strip long numeric barcodes / SKUs (> 6 digits, e.g. 9556930040116, 9997368063013, 002046390272)
     cleaned_line = re.sub(r"\b\d{7,16}\b", " ", cleaned_line)
+    # Strip leading 3-6 digit SKU/PLU code if followed by letters (e.g. "2504 YORCCHUN LOKAM" -> "YORCCHUN LOKAM")
+    cleaned_line = re.sub(r"^\s*\d{3,6}\s+([A-Za-z])", r"\1", cleaned_line)
     # Convert decimal commas to dots when flanked by digits (e.g. "9,00" -> "9.00", "74,90" -> "74.90")
     cleaned_line = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", cleaned_line)
     # Collapse split decimal prices (e.g. "160 .00" -> "160.00")
@@ -499,6 +501,9 @@ def _is_noise_line(text: str) -> bool:
     if _PHONE_RE.search(stripped):
         return True
     if _ACCOUNT_RE.search(stripped):
+        return True
+    # Filter pure postal code or town address lines (e.g. "43300 SERI KEMBANGAN, SELANGOR", "40170 BANDAR SETIA ALAM")
+    if re.search(r"^\s*\d{4,5}(?:\s+\d{2,4})?\s+[A-Za-z\s,.-]+$", stripped):
         return True
     if _NOISE_RE.search(stripped):
         # Exclude header lines from line items unless grocery items are present
