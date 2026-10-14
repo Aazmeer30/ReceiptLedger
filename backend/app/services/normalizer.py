@@ -6,7 +6,7 @@ Converts raw OCR output lines into structured, canonical LineItemCreate objects.
 Pipeline per text-line:
   1. Regex extraction: quantity, unit, price tokens
   2. Remainder text → raw item name
-  3. Levenshtein fuzzy match against local_taxonomy.json (threshold ≥ 0.80)
+  3. Pre-indexed O(1) & RapidFuzz match against local_taxonomy.json (threshold ≥ 0.80)
   4. Canonical mapping: canonical_name, category, standard_unit
   5. Confidence tagging: items below threshold → review queue flag
 
@@ -38,12 +38,38 @@ logger = logging.getLogger(__name__)
 
 _TAXONOMY_PATH = Path(__file__).resolve().parents[3] / "data" / "local_taxonomy.json"
 
+
 @dataclass
 class TaxonomyEntry:
     canonical_name: str
     category: str
     standard_unit: str
     aliases: List[str] = field(default_factory=list)
+
+
+# Fast O(1) pre-indexed taxonomy lookup maps
+_TAXONOMY: List[TaxonomyEntry] = []
+_EXACT_ALIAS_MAP: Dict[str, TaxonomyEntry] = {}
+_NORM_ALIAS_MAP: Dict[str, TaxonomyEntry] = {}
+
+
+def _build_taxonomy_index(entries: List[TaxonomyEntry]) -> None:
+    """Pre-index aliases and canonical names for O(1) rapid dictionary lookup."""
+    global _EXACT_ALIAS_MAP, _NORM_ALIAS_MAP
+    _EXACT_ALIAS_MAP.clear()
+    _NORM_ALIAS_MAP.clear()
+    for entry in entries:
+        candidates = entry.aliases + [entry.canonical_name.lower()]
+        clean_canon = re.sub(r"\(.*?\)", "", entry.canonical_name).strip().lower()
+        if clean_canon:
+            candidates.append(clean_canon)
+        for alias in candidates:
+            alias_clean = alias.strip().lower()
+            if alias_clean:
+                _EXACT_ALIAS_MAP[alias_clean] = entry
+                norm = re.sub(r"[^a-z0-9]", "", alias_clean)
+                if norm:
+                    _NORM_ALIAS_MAP[norm] = entry
 
 
 def _load_taxonomy() -> List[TaxonomyEntry]:
@@ -63,12 +89,13 @@ def _load_taxonomy() -> List[TaxonomyEntry]:
                 aliases=[a.lower() for a in item.get("aliases", [])],
             )
         )
+    _build_taxonomy_index(entries)
     logger.debug("Loaded %d taxonomy entries.", len(entries))
     return entries
 
 
 # Module-level singleton
-_TAXONOMY: List[TaxonomyEntry] = _load_taxonomy()
+_TAXONOMY = _load_taxonomy()
 
 
 # ── Regex Patterns (from dev plan § 3.4) ────────────────────────────────────
@@ -118,14 +145,30 @@ _DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Stop patterns: Line items strictly precede summary / total / tender sections
+_STOP_SECTION_RE = re.compile(
+    r"\b("
+    r"sub[\s-]?total|grand[\s-]?total|net[\s-]?total|net[\s-]?amount|total\s*sales|"
+    r"round(?:ed|ing)?[\s-]?total|total\s*rounded|amount[\s-]?payable|payable[\s-]?amount|"
+    r"bill[\s-]?total|total[\s-]?amount|total\s*items?|items?\s*total|total\s*qty|totalgty|totall?ttem|totall?y|"
+    r"all\s*pri\s*ce\s*are\s*inclusive|item\s*count|"
+    r"item\(s\)\s*\d+|qty\(s\)\s*:\s*\d+|"
+    r"total[\s=:]+(?:rm|pkr|rs\.?|\$)?\s*\d|"
+    r"cash\s*(?:rm|pkr|rs\.?|\$|paid|tendered|pald|back|[:=])|change\s*(?:rm|pkr|rs\.?|\$|[:=])|"
+    r"sales\s*tax|sst|gst\s*inclusive|"
+    r"ٹوٹل|کل"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Strip common receipt header/footer metadata, contact info, banking fields, and noise
 _NOISE_RE = re.compile(
     r"\b("
     r"total|grand[\s-]?total|net[\s-]?total|sub[\s-]?total|gross[\s-]?total|amount|vat|gst|gstin|pan|tax|discount|balance|change|cash|"
     r"bill|bill\s*to|ship\s*to|sold\s*to|customer|place\s*of\s*supply|terms|conditions|warranty|signature|signatory|authorised|"
-    r"invoice|receipt|ntn|nin|strn|pos|terminal|date|pate|time|tne|items|rate|description|price|qty|"
+    r"invoice|receipt|sntn|srb|pra|kpra|fbr|ntn|nin|strn|pos|terminal|date|pate|time|tne|items|rate|description|price|qty|"
     r"total\s*items|items\s*total|total\s*qty|item\s*count|"
-    r"thank\s*you|branch|tel|phone|mob|mobile|cell|whatsapp|helpline|call|contact|"
+    r"thank\s*you|branch|tel|phone|mob|mobile|cell|whatsapp|helpline|call|contact|uan|"
     r"raast|transfer|transferred|stan|rrn|iban|account|acct|bank|easypaisa|jazzcash|nayapay|sadapay|wallet|"
     r"pechs|shahrah|karachi|clifton|khi|lahore|islamabad|rawalpindi|jaipur|rajasthan|"
     r"jalan|jln|taman|lorong|floor|lot\s*\d+|avenue|damansara|shah\s*alam|johor\s*bahru|grindelwald|entspricht|mwst|"
@@ -136,20 +179,98 @@ _NOISE_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
-_PHONE_RE = re.compile(r"\b(?:03\d{2}[-\s]?\d{7}|0\d{2,3}[-\s]?\d{6,8}|\+?92[-\s]?\d{3}[-\s]?\d{7})\b")
+_PHONE_RE = re.compile(
+    r"\b(?:03\d{2}[-\s]?\d{7}|0\d{2,3}[-\s]?\d{6,8}|\+?92[-\s]?\d{3}[-\s]?\d{7}|uan\b|uan\s*[:;]?\s*\+?\d+)\b",
+    re.IGNORECASE,
+)
 _ACCOUNT_RE = re.compile(r"\b(?:stan|rrn|iban|acct|acc)\s*[:#]?\s*\d+\b", re.IGNORECASE)
+
+# Common OCR misreads on Pakistani receipts & Roman Urdu variations
+_OCR_TYPO_MAP: Dict[str, str] = {
+    "witha": "sweet melon",
+    "withaperkg": "sweet melon",
+    "spnch": "spinach",
+    "spnchperkg": "spinach",
+    "disposibe": "disposable",
+    "gass": "glass",
+    "mi": "mineral",
+    "rot": "roti",
+    "alu": "aloo",
+    "piaz": "pyaz",
+    "tmatar": "tamatar",
+    "timatar": "tamatar",
+    "lehsan": "lehsan",
+    "lahsun": "lehsan",
+    "lasun": "lehsan",
+    "adrak": "adrak",
+    "andas": "andey",
+    "anda": "andey",
+    "anday": "andey",
+    "mikpak": "milkpak",
+    "milpak": "milkpak",
+    "milkpack": "milkpak",
+    "putter": "butter",
+    "yoourt": "yogurt",
+    "dahl": "dahi",
+    "deal": "daal",
+    "chavoal": "chawal",
+    "cheer": "cheeni",
+    "chini": "cheeni",
+    "hee": "ghee",
+    "aata": "atta",
+    "ata": "atta",
+    "juic": "juice",
+    "ketchp": "ketchup",
+    "mayo": "mayonnaise",
+    "safguard": "safeguard",
+    "colgat": "colgate",
+}
 
 
 # ── Public Interface ──────────────────────────────────────────────────────────
 
+def _clean_retail_item_text(text: str) -> str:
+    """
+    Strip supermarket barcode numbers, weight specifiers (e.g. 'PER KG 0.640 a'),
+    multipliers, and formatting artifacts from an item description.
+    """
+    s = text
+    s = re.sub(r"^\s*(?:\d{4,16}\s+)+", "", s)
+    s = re.sub(
+        r"\bPER\s+(?:KG|K9|KE|KQ|LTR|L|DZ|DZN|PC|PCS|GM|G|PKT)\b(?:\s+\d+(?:\.\d+)?\s*[a-zA-Z]?)?",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r"\s+[a-zA-Z]$", "", s)
+    s = _DIMENSION_RE.sub(" ", s)
+    s = re.sub(r"\b(?:Rs\.?|PKR|RM|CHF|EUR|USD|\$|SR|GST|VAT|TX)\b", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"[×xX@\-–/|*#:~^\\=\(\)\[\]\{\}“”\"_]+", " ", s)
+    return " ".join(s.split()).strip(".,- ")
+
+
+def _is_price_continuation_line(text: str) -> bool:
+    """
+    Check if a receipt line is a supermarket pricing table row (e.g. Metro / Carrefour / Imtiaz)
+    containing multi-column prices (e.g. '199.00 199.00 199.00 127.36 0.00 0.00 127.96')
+    and no real product description.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _STOP_SECTION_RE.search(stripped):
+        return False
+    decimals = re.findall(r"\b\d+[.,]\d{2}\b", stripped)
+    letters = re.findall(r"[A-Za-z]", stripped)
+    return len(decimals) >= 1 and len(letters) <= 5
+
+
 def _fold_continuation_lines(text_lines: List[List[OCRToken]]) -> List[List[OCRToken]]:
     """
     Fold multi-line retail item blocks:
-    In many POS and supermarket receipts, an item spans 2 lines:
-      Line 1: Item description (e.g. 'CHOPPING BOARO 35.5x25.5CM 803M#')
-      Line 2: Barcode / quantity / pricing (e.g. '8970669 1X 19.00 19.00' or '@5 X RM 12.50')
-    If Line i has a product description without a validated price, and Line i+1 (or i+2) provides
-    the barcode and price, fold them into a unified line item block.
+    In many POS and supermarket receipts (e.g. Metro, Carrefour, Imtiaz), an item spans 2 lines:
+      Line 1: Item description + barcode / weight (e.g. '129728 WITHA PER KG 0.640 a')
+      Line 2: Pricing table columns (e.g. '199.00 199.00 199.00 127.36 0.00 0.00 127.96')
     """
     merged_lines: List[List[OCRToken]] = []
     i = 0
@@ -159,41 +280,29 @@ def _fold_continuation_lines(text_lines: List[List[OCRToken]]) -> List[List[OCRT
         lt = " ".join(t.text for t in text_lines[i]).strip()
 
         # Stop looking ahead if reaching receipt total/summary
-        if re.search(
-            r"\b("
-            r"sub[\s-]?total|grand[\s-]?total|net[\s-]?total|total\s*sales|"
-            r"round(?:ed|ing)?[\s-]?total|total\s*rounded|amount[\s-]?payable|payable[\s-]?amount|"
-            r"bill[\s-]?total|total[\s-]?amount|total\s*items|items\s*total|item\s*count|"
-            r"item\(s\)\s*\d+|qty\(s\)\s*:\s*\d+|"
-            r"total[\s=:]+(?:rm|pkr|rs\.?|\$)?\s*\d|"
-            r"cash\s*(?:rm|pkr|rs\.?|\$|paid|tendered|[:=])|change\s*(?:rm|pkr|rs\.?|\$|[:=])|"
-            r"ٹوٹل|کل"
-            r")\b",
-            lt,
-            re.IGNORECASE,
-        ):
+        if _STOP_SECTION_RE.search(lt):
             merged_lines.append(text_lines[i])
             i += 1
             continue
 
-        item = _parse_single_line(lt, 0.9)
-        if not item or (item.total_price > 0 and item.confidence_score >= 0.80):
+        # Do not fold continuation lines onto non-item noise headers
+        if _is_noise_line(lt):
             merged_lines.append(text_lines[i])
             i += 1
             continue
 
-        # Look ahead up to 2 lines for a pricing continuation line
         folded = False
-        for offset in [1, 2]:
-            if i + offset < n:
-                next_lt = " ".join(t.text for t in text_lines[i + offset]).strip()
-                # Check for retail continuation pattern: barcode/sku + 1X/multiplier + decimal price
-                if re.search(r"\b(?:\d{6,16}\s+)?(?:\d+\s*[xX*@]\s*)?(?:RM|Rs\.?|\$)?\s*\d+[.,]\d{2}\b", next_lt):
-                    combined_tokens = text_lines[i] + text_lines[i + offset]
+        if i + 1 < n:
+            next_lt = " ".join(t.text for t in text_lines[i + 1]).strip()
+            if not _STOP_SECTION_RE.search(next_lt):
+                if _is_price_continuation_line(next_lt) or re.search(
+                    r"\b(?:\d{6,16}\s+)?(?:\d+\s*[xX*@]\s*)?(?:RM|Rs\.?|\$)?\s*\d+[.,]\d{2}\b",
+                    next_lt,
+                ):
+                    combined_tokens = text_lines[i] + text_lines[i + 1]
                     merged_lines.append(combined_tokens)
-                    i = i + offset + 1
+                    i += 2
                     folded = True
-                    break
         if not folded:
             merged_lines.append(text_lines[i])
             i += 1
@@ -228,19 +337,7 @@ def parse_lines_to_items(
             continue
 
         # In receipts, line items strictly precede the subtotal / grand total summary section
-        if re.search(
-            r"\b("
-            r"sub[\s-]?total|grand[\s-]?total|net[\s-]?total|total\s*sales|"
-            r"round(?:ed|ing)?[\s-]?total|total\s*rounded|amount[\s-]?payable|payable[\s-]?amount|"
-            r"bill[\s-]?total|total[\s-]?amount|total\s*items|items\s*total|item\s*count|"
-            r"item\(s\)\s*\d+|qty\(s\)\s*:\s*\d+|"
-            r"total[\s=:]+(?:rm|pkr|rs\.?|\$)?\s*\d|"
-            r"cash\s*(?:rm|pkr|rs\.?|\$|paid|tendered|[:=])|change\s*(?:rm|pkr|rs\.?|\$|[:=])|"
-            r"ٹوٹل|کل"
-            r")\b",
-            line_text,
-            re.IGNORECASE,
-        ):
+        if _STOP_SECTION_RE.search(line_text):
             break
 
         # Compute per-line confidence as mean token confidence
@@ -260,8 +357,8 @@ def parse_lines_to_items(
 def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
     """
     Find the best matching taxonomy entry for a raw item name string.
-    Combines rapidfuzz token-set & token-sort matching, domain typo corrections,
-    and single-word alias safeguards to prevent false positives.
+    Combines O(1) pre-indexed alias lookups, domain typo corrections,
+    retail artifact cleaning, and RapidFuzz multi-metric scoring.
     """
     if not _TAXONOMY:
         return None
@@ -270,38 +367,38 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
     if len(query) < 2:
         return None
 
-    # Common OCR misreads on Pakistani receipts & handwriting
-    ocr_typo_map = {
-        "andas": "andey",
-        "anda": "andey",
-        "anday": "andey",
-        "mikpak": "milkpak",
-        "milpak": "milkpak",
-        "milkpack": "milkpak",
-        "putter": "butter",
-        "yoourt": "yogurt",
-        "dahl": "dahi",
-        "deal": "daal",
-        "chavoal": "chawal",
-        "cheer": "cheeni",
-        "hee": "ghee",
-        "aata": "atta",
-        "ata": "atta",
-        "juic": "juice",
-    }
-    words = query.split()
-    corrected_words = [ocr_typo_map.get(w.strip(".,-"), w) for w in words]
+    # 1. Exact alias lookup (O(1))
+    if query in _EXACT_ALIAS_MAP:
+        return _EXACT_ALIAS_MAP[query]
+    norm_q = re.sub(r"[^a-z0-9]", "", query)
+    if norm_q in _NORM_ALIAS_MAP:
+        return _NORM_ALIAS_MAP[norm_q]
+
+    # 2. Clean retail artifacts (strip barcodes, 'PER KG', dimension tokens)
+    cleaned = _clean_retail_item_text(query)
+    if cleaned in _EXACT_ALIAS_MAP:
+        return _EXACT_ALIAS_MAP[cleaned]
+    norm_c = re.sub(r"[^a-z0-9]", "", cleaned)
+    if norm_c in _NORM_ALIAS_MAP:
+        return _NORM_ALIAS_MAP[norm_c]
+
+    # 3. Apply domain typo corrections
+    words = (cleaned or query).split()
+    corrected_words = [_OCR_TYPO_MAP.get(w.strip(".,-"), w) for w in words]
     corrected_query = " ".join(corrected_words)
 
-    # 1. Direct alias match on corrected query
-    for entry in _TAXONOMY:
-        candidates = entry.aliases + [entry.canonical_name.lower()]
-        for alias in candidates:
-            alias_lower = alias.lower()
-            if alias_lower == corrected_query:
-                return entry
+    if corrected_query in _EXACT_ALIAS_MAP:
+        return _EXACT_ALIAS_MAP[corrected_query]
+    norm_corr = re.sub(r"[^a-z0-9]", "", corrected_query)
+    if norm_corr in _NORM_ALIAS_MAP:
+        return _NORM_ALIAS_MAP[norm_corr]
 
-    # 2. RapidFuzz Token-Set & Token-Sort scoring
+    # 4. Check distinctive core staple words if surrounded by OCR noise
+    for w in corrected_words:
+        if len(w) >= 3 and w in _EXACT_ALIAS_MAP:
+            return _EXACT_ALIAS_MAP[w]
+
+    # 5. RapidFuzz Token-Set & Token-Sort scoring
     best_score = 0.0
     best_entry: Optional[TaxonomyEntry] = None
 
@@ -313,30 +410,19 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
             alias_lower = alias.lower()
             a_words = alias_lower.split()
 
-            # Exact match check
-            if alias_lower == corrected_query:
-                return entry
-
             std_ratio = fuzz.ratio(corrected_query, alias_lower)
             token_set = fuzz.token_set_ratio(corrected_query, alias_lower)
             token_sort = fuzz.token_sort_ratio(corrected_query, alias_lower)
 
             # Single-word alias (e.g. "atta", "rice", "oil", "tissue", "tea")
             if len(a_words) == 1:
-                # If query is also a single word, rely on standard ratio
                 if len(q_words) == 1:
                     score = std_ratio / 100.0
                 elif len(q_words) == 2 and a_words[0] in q_words:
-                    # e.g. "chakki atta" vs alias "atta"
                     score = 0.88
                 else:
-                    # In a multi-word query (>= 3 words), a single-word alias is too generic
-                    # unless token_sort is high (prevent "double sided tissue tape" -> "tissue")
                     score = (token_sort * 0.70 + std_ratio * 0.30) / 100.0
             else:
-                # Multi-word alias (e.g. "basmati rice", "chakki atta", "cooking oil")
-                # Token-set ratio gracefully matches brand prefixes:
-                # "Guard Super Basmati Rice" vs "basmati rice" -> token_set=100
                 score = (token_set * 0.70 + token_sort * 0.30) / 100.0
 
             if score > best_score:
@@ -359,27 +445,22 @@ def fuzzy_match(raw_text: str) -> Optional[TaxonomyEntry]:
 def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCreate]:
     """
     Extract structured fields from a single receipt line string.
-
-    Strategy:
-      - Strip leading junk symbols (e.g. '?', '>', '~').
-      - Collapse split decimal prices (e.g. '160 .00' -> '160.00').
-      - Strip leading numbering (e.g. '1. ', '1, ', '2) ').
-      - Skip if line matches pure date format.
-      - Find all price-like numbers; the last one is treated as total_price,
-        the second-to-last (if present) as unit_price.
-      - Find quantity + unit token.
-      - Whatever remains after stripping numeric tokens is the raw item name.
     """
-    # Clean leading noise characters
-    cleaned_line = re.sub(r"^[?><~+*.,_\-|\s]+", "", line_text).strip()
-    # Strip long numeric barcodes / SKUs (> 6 digits, e.g. 9556930040116, 9997368063013, 002046390272)
+    # Clean quotes, non-standard apostrophes, and leading noise characters
+    cleaned_line = re.sub(r"[\u2018\u2019\u201c\u201d'\"`]", "", line_text)
+    cleaned_line = re.sub(r"^[?><~+*.,_\-|\s]+", "", cleaned_line).strip()
+    # Strip leading repeated SKU/barcode numbers (e.g. '129728 129728 ')
+    cleaned_line = re.sub(r"^\s*(?:\d{4,16}\s+)+", "", cleaned_line)
+    # Strip long numeric barcodes / SKUs (> 6 digits)
     cleaned_line = re.sub(r"\b\d{7,16}\b", " ", cleaned_line)
     # Strip leading 3-6 digit SKU/PLU code if followed by letters (e.g. "2504 YORCCHUN LOKAM" -> "YORCCHUN LOKAM")
     cleaned_line = re.sub(r"^\s*\d{3,6}\s+([A-Za-z])", r"\1", cleaned_line)
     # Convert decimal commas to dots when flanked by digits (e.g. "9,00" -> "9.00", "74,90" -> "74.90")
     cleaned_line = re.sub(r"(\d+),(\d{2})\b", r"\1.\2", cleaned_line)
-    # Collapse split decimal prices (e.g. "160 .00" -> "160.00")
-    cleaned_line = re.sub(r"(\d+)\s+(\.\d{1,2})\b", r"\1\2", cleaned_line)
+    # Collapse split decimal prices and weights (e.g. "160 .00" -> "160.00", "0. 640" -> "0.640")
+    cleaned_line = re.sub(r"\b(\d+)\s*\.\s*(\d+)\b", r"\1.\2", cleaned_line)
+    # Collapse duplicate adjacent decimal artifacts (e.g. "0.700 700." -> "0.700")
+    cleaned_line = re.sub(r"\b0\.(\d{2,3})\s+\1[.,]?\b", r"0.\1", cleaned_line)
     # Correct common OCR confusion between digit '6'/'9'/'b' and unit 'g' for standard packaging grams
     cleaned_line = re.sub(r"\b(100|200|250|400|430|450|500|800|900|1000)[6bB9]\b", r"\1g", cleaned_line)
     # Replace underscores with spaces (e.g. 'Cheeni_3kq_' -> 'Cheeni 3kq ')
@@ -407,7 +488,7 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
             return None
 
     # Skip lines that are dates
-    if _DATE_RE.search(line_body) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", line_body, re.IGNORECASE):
+    if _DATE_RE.search(line_body) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc|water|glass|roti|nihari)\b", line_body, re.IGNORECASE):
         return None
 
     # ── Path A: Direct structured (Item Name + Qty + Unit + Price) match ──────
@@ -449,14 +530,19 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
 
     # Exclude quantity with units from price candidates (e.g. 5KG, 430G shouldn't be prices)
     line_for_prices = _QTY_WITH_UNIT_RE.sub(" ", line_body)
+    line_for_prices = re.sub(
+        r"\bPER\s+(?:KG|K9|KE|KQ|LTR|L|DZ|DZN|PC|PCS|GM|G|PKT)\s+\d+(?:\.\d+)?\b",
+        " ",
+        line_for_prices,
+        flags=re.IGNORECASE,
+    )
     prices = _extract_prices(line_for_prices)
     if not prices:
-        # Check if any standalone price distinct from quantity exists
         all_candidate_prices = _extract_prices(line_body)
-        prices = [p for p in all_candidate_prices if abs(p - qty) > 0.001 or p >= 30.0]
+        prices = [p for p in all_candidate_prices if abs(p - qty) > 0.001 or p >= 20.0]
 
     raw_name = _extract_item_name(line_body)
-    if not raw_name or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 3:
+    if not raw_name or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 2:
         return None
 
     match = fuzzy_match(raw_name)
@@ -481,13 +567,26 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
         )
 
     has_decimals = any("." in w and any(c.isdigit() for c in w) for w in line_body.split())
-    if has_decimals or len(prices) == 1:
+    if len(prices) >= 3 and has_decimals:
+        # Multi-column table (e.g. Metro / Carrefour / Imtiaz)
+        # prices: [unit_price, base_price, net_price, ..., total_price]
+        total_price = prices[-1]
+        unit_price = prices[0]
+        # If first price token is an OCR artifact or misaligned, recompute unit_price
+        if qty > 1.0 and abs(qty * unit_price - total_price) > 5.0:
+            unit_price = round(total_price / qty, 2)
+    elif has_decimals or len(prices) == 1:
         total_price = prices[-1]
         unit_price = prices[-2] if len(prices) >= 2 else total_price
     else:
-        # Handwritten slip: item price is written first, margin checkmarks/doodles are trailing
-        total_price = prices[0]
-        unit_price = total_price
+        # If multiple integer prices on handwritten slip, e.g. 'Rot 6 150':
+        if len(prices) == 2 and prices[0].is_integer() and 1 <= prices[0] <= 50 and prices[1] > prices[0]:
+            qty = prices[0]
+            total_price = prices[1]
+            unit_price = round(total_price / qty, 2)
+        else:
+            total_price = prices[0]
+            unit_price = total_price
 
     if total_price > 50000.0 or total_price <= 0.0:
         return None
@@ -514,7 +613,7 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
         item_conf = max(confidence, 0.85)
     else:
         # Require reasonable confidence and realistic price to prevent OCR noise lines
-        if confidence < 0.45 or total_price <= 5.0 or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 4:
+        if confidence < 0.45 or total_price <= 5.0 or len(re.sub(r"[^a-zA-Z]", "", raw_name)) < 3:
             return None
         canonical_name = raw_name.title()
         category = "Miscellaneous"
@@ -535,7 +634,6 @@ def _parse_single_line(line_text: str, confidence: float) -> Optional[LineItemCr
 
 def _extract_prices(text: str) -> List[float]:
     """Extract all price-like float values from a text string."""
-    # Neutralise dimensional measurements (e.g. 35.5x25.5CM, 803M#, 48MM, 120ML) so they are not captured as prices
     clean_text = _DIMENSION_RE.sub(" ", text)
     results = []
     for match in _PRICE_RE.finditer(clean_text):
@@ -558,41 +656,45 @@ def _extract_prices(text: str) -> List[float]:
 def _extract_qty_unit(text: str) -> Tuple[float, str]:
     """
     Extract the first (quantity, unit) pair found in the text.
-    Prioritises explicit units (e.g. 5kg, 2L, 500g).
+    Prioritises explicit units (e.g. 5kg, 2L, 500g) and produce weighing syntax (PER KG 0.640).
     Returns (1.0, 'pcs') as default if nothing is found.
     """
-    # Neutralise dimensional measurements (e.g. 35.5x25.5CM, 18MM, 100M) so dimension numbers aren't confused with item quantities
     clean_text = _DIMENSION_RE.sub(" ", text)
+
+    # 1. Produce weighing syntax: PER KG 0.640
+    m_per = re.search(
+        r"\bPER\s+(?P<unit>KG|K9|KE|KQ|LTR|L|DZ|DZN|PC|PCS|GM|G|PKT)\s+(?P<qty>\d+(?:\.\d+)?)\b",
+        clean_text,
+        re.IGNORECASE,
+    )
+    if m_per:
+        return float(m_per.group("qty")), _normalise_unit(m_per.group("unit"))
+
+    # 2. Standard quantity with unit: 5kg, 500g, 1dz
     m = _QTY_WITH_UNIT_RE.search(clean_text)
     if m:
         qty_str = m.group("qty")
         unit_str = (m.group("unit") or "pcs").lower()
         return float(qty_str), _normalise_unit(unit_str)
 
-    m = _QTY_UNIT_RE.search(clean_text)
-    if m:
-        qty_str = m.group("qty")
-        unit_str = (m.group("unit") or "pcs").lower()
-        unit_str = _normalise_unit(unit_str)
-        try:
-            return float(qty_str), unit_str
-        except ValueError:
-            pass
+    # 3. Multiplier syntax: 2x, 6X, 3 *
+    m_mult = re.search(r"\b(?P<qty>\d+)\s*[xX*@]\b|\b[xX*@]\s*(?P<qty2>\d+)\b", clean_text)
+    if m_mult:
+        qty_val = float(m_mult.group("qty") or m_mult.group("qty2"))
+        if 0 < qty_val <= 100:
+            return qty_val, "pcs"
+
     return 1.0, "pcs"
 
 
 def _extract_item_name(text: str) -> str:
     """
     Strip price, quantity, and dimensional tokens from the line to isolate the item description.
-    Preserves English alphabet characters (R, P, K, S) in food names.
+    Preserves English alphabet characters in food names.
     """
-    cleaned = text
+    cleaned = _clean_retail_item_text(text)
     cleaned = _PRICE_RE.sub("", cleaned)
     cleaned = _QTY_WITH_UNIT_RE.sub("", cleaned)
-    cleaned = _QTY_UNIT_RE.sub("", cleaned)
-    cleaned = _DIMENSION_RE.sub(" ", cleaned)
-    cleaned = re.sub(r"\b(?:Rs\.?|PKR|RM|CHF|EUR|USD|\$|SR|GST|VAT|TX)\b", " ", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"[×xX@\-–/|*#:~^\\=\(\)\[\]\{\}“”\"]", " ", cleaned)
     cleaned = re.sub(r"\b\d+\b", "", cleaned)
     cleaned = " ".join(cleaned.split()).strip(".,- ")
     return cleaned if len(cleaned) >= 2 else ""
@@ -607,14 +709,19 @@ def _is_noise_line(text: str) -> bool:
         return True
     if _ACCOUNT_RE.search(stripped):
         return True
-    # Filter pure postal code or town address lines (e.g. "43300 SERI KEMBANGAN, SELANGOR", "40170 BANDAR SETIA ALAM")
+    # Filter pure postal code or town address lines
     if re.search(r"^\s*\d{4,5}(?:\s+\d{2,4})?\s+[A-Za-z\s,.-]+$", stripped):
         return True
     if _NOISE_RE.search(stripped):
-        # Exclude header lines from line items unless grocery items are present
-        if not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", stripped):
+        if not re.search(
+            r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc|water|glass|roti|nihari|haleem|karahi|tikka|biryani|pulao|naan|shampoo)\b",
+            stripped,
+        ):
             return True
-    if _DATE_RE.search(stripped) and not re.search(r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc)\b", stripped):
+    if _DATE_RE.search(stripped) and not re.search(
+        r"\b(atta|rice|oil|milk|tea|sugar|bread|eggs|butter|dahi|ghee|soap|chawal|daal|doodh|cheeni|panadol|disprin|sancos|surf|aloo|pyaz|tamatar|adrak|lehsan|ketchup|masala|mask|tuc|water|glass|roti|nihari|haleem|karahi|tikka|biryani|pulao|naan|shampoo)\b",
+        stripped,
+    ):
         return True
     if re.match(r"^[-=*_.~^|#]+$", stripped):
         return True

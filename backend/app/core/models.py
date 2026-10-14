@@ -48,6 +48,8 @@ SEEDED_CATEGORIES: List[Dict[str, str]] = [
      "description": "Detergents, cleaning supplies, and paper goods"},
     {"name": "Personal Care",         "color_hex": "#8B5CF6",
      "description": "Toiletries, skincare, and hygiene essentials"},
+    {"name": "Health & Pharmacy",     "color_hex": "#06B6D4",
+     "description": "Medicines, first aid, supplements, and pharmacy items"},
     {"name": "Utilities & Bills",     "color_hex": "#F59E0B",
      "description": "Electricity, gas, water, and top-up bills"},
     {"name": "Snacks & Beverages",    "color_hex": "#EC4899",
