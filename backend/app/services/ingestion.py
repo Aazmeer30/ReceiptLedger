@@ -317,6 +317,10 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         (re.compile(r"morganfield", re.IGNORECASE), "Morganfield's"),
         (re.compile(r"saathimart", re.IGNORECASE), "Saathimart"),
         (re.compile(r"99\s*speed\s*mart", re.IGNORECASE), "99 Speed Mart"),
+        (re.compile(r"mr[\s\.]*d[\s\.]*i[\s\.]*y|mr\s*diy", re.IGNORECASE), "MR. D.I.Y."),
+        (re.compile(r"swc\s*enterprise", re.IGNORECASE), "SWC Enterprise Sdn Bhd"),
+        (re.compile(r"ted\s*heng", re.IGNORECASE), "Ted Heng Stationery & Books"),
+        (re.compile(r"[th]ree\s*stooges", re.IGNORECASE), "Three Stooges Bistro & Cafe"),
     ]
 
     # Pass 1: Scan top 10 lines for known merchants or shop keywords
@@ -347,7 +351,8 @@ def _extract_merchant(text_lines: List) -> Optional[str]:
         r"\b(super\s*market|market|karyana|store|general\s*store|mart|cash\s*&\s*carry|"
         r"bakers|pharmacy|sweets|traders|trading|enterprises|electronics|"
         r"sdn\s*bhd|bhd|ltd|limited|co\b|company|delights|kitchen|kitchenette|"
-        r"restaurant|cafe|bistro|grill|diner|pizza|pizzeria|bakery|book\s*ta)\b",
+        r"restaurant|cafe|bistro|grill|diner|pizza|pizzeria|bakery|book\s*ta|"
+        r"syarikat|perniagaan|hardware|stationery|stationers|books|gallery|retail|express|pan\s*shop)\b",
         re.IGNORECASE,
     )
 
@@ -407,6 +412,12 @@ def _extract_date(text_lines: List) -> Optional[str]:
     for line in search_lines:
         line_text = " ".join(t.text for t in line).strip()
         line_text = re.sub(r"\b0([a-zA-Z]{2})\b", r"O\1", line_text)
+        # Fix OCR misreads of digit '0' as letter 'O' or 'o' in date segments (e.g. 'O2-02-18' or '05 O2- 02-18')
+        line_text = re.sub(r"(?<=[-/\s])[Oo](?=\d)", "0", line_text)
+        line_text = re.sub(r"(?<=\d)[Oo](?=[-/\s])", "0", line_text)
+        # Normalize whitespace around date separators (e.g. '05 - 02 - 18' -> '05-02-18')
+        line_text = re.sub(r"\s*([-\./])\s*", r"\1", line_text)
+
         # Handle handwritten date misreads after Date: (e.g. 'lof1o/23' -> '10/10/23')
         m_raw = re.search(r"Date:\s*([^\s]+)", line_text, re.IGNORECASE)
         if m_raw and not re.search(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", m_raw.group(1), re.IGNORECASE):
@@ -463,7 +474,8 @@ def _compute_total(text_lines: List, line_items: List[LineItemCreate]) -> float:
     )
     grand_total_pattern = re.compile(
         r"\b(grand[\s-]?total|net[\s-]?total|amount[\s-]?payable|payable[\s-]?amount|"
-        r"bill[\s-]?total|total[\s-]?amount|round(?:ed|ing)?[\s-]?total|total[\s=:]+|"
+        r"bill[\s-]?total|total[\s-]?amount|round(?:ed|ing)?[\s-]?total|total\s*rounded|"
+        r"total\s*sales(?:\s*\(inclusive\s*of\s*gst\))?|total[\s=:]+|"
         r"tole|totl|ٹوٹل|کل)\b",
         re.IGNORECASE,
     )
