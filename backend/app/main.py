@@ -26,8 +26,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import analytics, health, receipts, review_queue
+from app.api import analytics, dashboard, health, receipts, review_queue
 from app.core.config import settings
+from app.services import store
 
 # ── Logging Configuration ─────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ async def lifespan(app: FastAPI):
     Runs startup tasks before the server starts accepting requests.
     """
     logger.info("=" * 60)
-    logger.info("ReceiptLedger Backend  v1.0.0")
+    logger.info("ReceiptLedger Backend  v1.0.0 (Unified Monorepo Gateway)")
     logger.info("Environment  : %s", settings.environment)
     logger.info("Supabase     : %s", "enabled" if settings.supabase_enabled else "disabled (in-memory store)")
     logger.info("Cloud Vision : %s", "enabled" if settings.cloud_vision_enabled else "disabled (Tesseract fallback)")
@@ -60,6 +61,14 @@ async def lifespan(app: FastAPI):
     if settings.google_application_credentials:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.google_application_credentials
         logger.info("Google credentials path set.")
+
+    # In development mode, auto-seed realistic sample data if store is empty
+    if settings.is_development and settings.seed_demo_data_on_startup:
+        existing = store.list_receipts()
+        if len(existing) == 0:
+            seeded = store.seed_demo_data()
+            logger.info("Auto-seeded demo data for dashboard: %s receipts, %s items, %s review items",
+                        seeded["receipts"], seeded["line_items"], seeded["review_items"])
 
     yield  # Server is running
 
@@ -85,13 +94,15 @@ app = FastAPI(
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-
+# Configured for Monorepo architecture: allows mobile app & web dashboard (Vite / React)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # ── Global Exception Handler ──────────────────────────────────────────────────
@@ -112,6 +123,7 @@ app.include_router(health.router,        prefix=API_PREFIX)
 app.include_router(receipts.router,      prefix=API_PREFIX)
 app.include_router(analytics.router,     prefix=API_PREFIX)
 app.include_router(review_queue.router,  prefix=API_PREFIX)
+app.include_router(dashboard.router,     prefix=API_PREFIX)
 
 
 # ── Root redirect ─────────────────────────────────────────────────────────────
@@ -119,8 +131,11 @@ app.include_router(review_queue.router,  prefix=API_PREFIX)
 @app.get("/", include_in_schema=False)
 async def root() -> dict:
     return {
-        "service": "ReceiptLedger API",
+        "service": "ReceiptLedger Unified Monorepo API Gateway",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/api/v1/health",
+        "dashboard_overview": "/api/v1/dashboard/overview",
+        "review_queue": "/api/v1/review-queue",
     }
+

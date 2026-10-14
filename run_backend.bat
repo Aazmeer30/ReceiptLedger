@@ -111,6 +111,7 @@ echo   ReceiptLedger Backend is starting!
 echo.
 echo   - Local Web UI / Docs  : http://localhost:8000/docs
 echo   - Local API Health     : http://localhost:8000/api/v1/health
+echo   - Web Dashboard API    : http://localhost:8000/api/v1/dashboard/overview
 echo   - Mobile App Base URL  : http://%LAN_IP%:8000
 echo.
 echo   Press CTRL+C anytime to stop the server.

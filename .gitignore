@@ -5,6 +5,10 @@
 *.pem
 service_account.json
 credentials.json
+credentials/
+backend/credentials/
+*.json.key
+google_vision_key.json
 
 # Python
 __pycache__/

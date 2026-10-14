@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,7 +31,22 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     # ── CORS ────────────────────────────────────────────────────────────────
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://localhost:4173"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if v_stripped.startswith("[") and v_stripped.endswith("]"):
+                try:
+                    return json.loads(v_stripped)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v_stripped.split(",") if origin.strip()]
+        elif isinstance(v, list):
+            return v
+        return ["http://localhost:3000", "http://localhost:5173", "http://localhost:4173"]
 
     # ── Google Cloud Vision ──────────────────────────────────────────────────
     google_application_credentials: str = ""
@@ -53,6 +69,8 @@ class Settings(BaseSettings):
     max_concurrent_ocr: int = 2
     # Max uploaded file size in bytes (10 MB)
     max_upload_bytes: int = 10 * 1024 * 1024
+    # Auto-seed sample receipts and review items in development for easy dashboard testing
+    seed_demo_data_on_startup: bool = True
 
     @property
     def is_development(self) -> bool:

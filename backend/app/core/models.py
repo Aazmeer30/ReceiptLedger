@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -201,3 +201,55 @@ class HealthResponse(BaseModel):
     version: str
     environment: str
     engines: EngineStatus
+
+
+# ── Dashboard Groundwork Models ────────────────────────────────────────────────
+
+class DashboardStatCard(BaseModel):
+    key: str
+    label: str
+    value: Any
+    formatted_value: str
+    change: Optional[float] = None
+    change_type: Optional[str] = None  # "increase", "decrease", "neutral"
+    helper_text: Optional[str] = None
+
+
+class CategorySpendDetail(BaseModel):
+    category_name: str
+    color_hex: str
+    description: Optional[str] = None
+    total_spend: float
+    item_count: int
+    percentage_of_total: float
+
+
+class DashboardOverviewResponse(BaseModel):
+    period: str
+    year: int
+    month: int
+    total_spend: float
+    delta_previous_month: Optional[float] = None
+    delta_percentage: Optional[float] = None
+    receipt_count: int
+    pending_review_count: int
+    verified_items_count: int
+    stat_cards: List[DashboardStatCard]
+    category_breakdown: List[CategorySpendDetail]
+    recent_receipts: List[Dict[str, Any]]
+
+
+class DashboardReviewSummary(BaseModel):
+    total: int
+    unresolved: int
+    accepted: int
+    edited: int
+
+
+class DashboardSeedResponse(BaseModel):
+    status: str
+    message: str
+    receipts_count: int
+    line_items_count: int
+    review_items_count: int
+
