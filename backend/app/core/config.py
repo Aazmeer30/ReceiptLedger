@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # Maximum Cloud Vision calls before automatic fallback to Tesseract
     vision_api_monthly_quota: int = 950
 
+    # ── Google Gemini (AI Studio) ────────────────────────────────────────────
+    # Get from https://aistudio.google.com/app/apikey
+    gemini_api_key: str = ""
+    # Model to use for receipt parsing (gemini-3.5-flash-lite is fast, reliable, and high quota)
+    gemini_model: str = "gemini-3.5-flash-lite"
+
     # ── Supabase / PostgreSQL ────────────────────────────────────────────────
     supabase_url: str = ""
     supabase_anon_key: str = ""
@@ -79,6 +85,10 @@ class Settings(BaseSettings):
     @property
     def cloud_vision_enabled(self) -> bool:
         return bool(self.google_application_credentials)
+
+    @property
+    def gemini_enabled(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def supabase_enabled(self) -> bool:

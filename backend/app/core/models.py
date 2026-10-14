@@ -193,6 +193,7 @@ class EngineStatus(BaseModel):
     cloud_vision: str
     tesseract: str
     easyocr: str
+    gemini: Optional[str] = None
     database: str
 
 

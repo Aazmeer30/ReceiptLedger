@@ -48,6 +48,7 @@ async def ingest_receipt(
     device_timestamp: Optional[str] = None,
     capture_mode: str = "single",
     user_id: Optional[str] = None,
+    ocr_engine: str = "auto",
 ) -> UploadReceiptResponse:
     """
     Full receipt ingestion pipeline.
@@ -125,57 +126,87 @@ async def ingest_receipt(
     receipt_type = classify_receipt_type(processed_image)
     logger.info("Classified receipt as: %s", receipt_type.value)
 
-    # ── Step 6: OCR Extraction ───────────────────────────────────────────────
-    tokens, engine_used = await route_and_extract(
-        image=processed_image,
-        image_bytes=processed_bytes,
-        receipt_type=receipt_type,
-    )
-    logger.info("OCR via '%s' produced %d tokens.", engine_used, len(tokens))
+    # ── Step 6: OCR Extraction (Gemini Vision or Local Pipeline) ─────────────
+    line_items: List[LineItemCreate] = []
+    merchant_name: Optional[str] = None
+    extracted_date: Optional[str] = None
+    total_amount: float = 0.0
+    mean_confidence: float = 0.85
+    engine_used: str = "unknown"
 
-    if not tokens:
-        # Fall back to minimal unknown receipt; DO NOT register visual hash so user can retry
-        empty_resp = _build_empty_response(receipt_type)
-        return empty_resp
+    should_try_gemini = (ocr_engine == "gemini") or (ocr_engine == "auto" and settings.gemini_enabled)
 
-    # ── Step 7: Spatial line reassembly ──────────────────────────────────────
-    text_lines = reassemble_lines(tokens)
+    if should_try_gemini:
+        from app.services.gemini_client import extract_and_parse, is_available
+        if is_available():
+            try:
+                mime = "image/png" if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
+                g_items, g_meta = extract_and_parse(image_bytes, mime_type=mime)
+                if g_items:
+                    line_items = g_items
+                    model_tag = g_meta.get("_model_used", settings.gemini_model) if g_meta else settings.gemini_model
+                    engine_used = f"gemini ({model_tag})"
+                    merchant_name = (g_meta.get("merchant_name") or "").strip() or None if g_meta else None
+                    extracted_date = g_meta.get("receipt_date") if g_meta else None
+                    total_amount = float(g_meta.get("total_amount") or sum(li.total_price for li in line_items)) if g_meta else sum(li.total_price for li in line_items)
+                    mean_confidence = sum(li.confidence_score for li in line_items) / len(line_items) if line_items else 0.95
+                    logger.info("Successfully extracted %d items via Gemini (%s).", len(line_items), model_tag)
+            except Exception as exc:
+                logger.warning("Gemini extraction failed: %s; falling back to local OCR pipeline.", exc)
 
-    # ── Step 8: Mean confidence of all tokens ────────────────────────────────
-    mean_confidence = (
-        sum(t.confidence for t in tokens) / len(tokens) if tokens else 0.5
-    )
+    # If Gemini wasn't requested, failed, or produced no items, run local OCR pipeline
+    if not line_items:
+        tokens, engine_used = await route_and_extract(
+            image=processed_image,
+            image_bytes=processed_bytes,
+            receipt_type=receipt_type,
+        )
+        logger.info("OCR via '%s' produced %d tokens.", engine_used, len(tokens))
 
-    # ── Step 9: NLP normalization ────────────────────────────────────────────
-    line_items: List[LineItemCreate] = normalizer.parse_lines_to_items(
-        text_lines, base_confidence=mean_confidence
-    )
-    logger.info("Normalised %d line items.", len(line_items))
+        if not tokens:
+            # Fall back to minimal unknown receipt; DO NOT register visual hash so user can retry
+            empty_resp = _build_empty_response(receipt_type)
+            return empty_resp
 
-    # ── Step 10: Header extraction (merchant, date, total) ───────────────────
-    merchant_name = _extract_merchant(text_lines)
-    extracted_date = _extract_date(text_lines)
+        # ── Step 7: Spatial line reassembly ──────────────────────────────────────
+        text_lines = reassemble_lines(tokens)
+
+        # ── Step 8: Mean confidence of all tokens ────────────────────────────────
+        mean_confidence = (
+            sum(t.confidence for t in tokens) / len(tokens) if tokens else 0.5
+        )
+
+        # ── Step 9: NLP normalization ────────────────────────────────────────────
+        line_items = normalizer.parse_lines_to_items(
+            text_lines, base_confidence=mean_confidence
+        )
+        logger.info("Normalised %d line items.", len(line_items))
+
+        # ── Step 10: Header extraction (merchant, date, total) ───────────────────
+        merchant_name = _extract_merchant(text_lines)
+        extracted_date = _extract_date(text_lines)
+        total_amount = _compute_total(text_lines, line_items)
+
+        # Reconcile single-item price OCR anomalies against confirmed receipt grand total
+        if total_amount > 0 and len(line_items) >= 2:
+            anomalies = [
+                li for li in line_items
+                if li.total_price > total_amount
+                or li.total_price <= 0
+                or (li.quantity > 50 and li.total_price == li.quantity)
+            ]
+            if len(anomalies) == 1:
+                normal_sum = sum(li.total_price for li in line_items if li not in anomalies)
+                rem = round(total_amount - normal_sum, 2)
+                if 0 < rem <= total_amount and rem < 15000.0:
+                    logger.info(
+                        "Reconciled price anomaly for '%s' from %.2f to %.2f based on grand total %.2f",
+                        anomalies[0].item_name, anomalies[0].total_price, rem, total_amount,
+                    )
+                    anomalies[0].total_price = rem
+                    anomalies[0].unit_price = rem
+
     receipt_date = extracted_date or (device_timestamp[:10] if device_timestamp else date.today().isoformat())
-    total_amount = _compute_total(text_lines, line_items)
-
-    # Reconcile single-item price OCR anomalies against confirmed receipt grand total
-    if total_amount > 0 and len(line_items) >= 2:
-        anomalies = [
-            li for li in line_items
-            if li.total_price > total_amount
-            or li.total_price <= 0
-            or (li.quantity > 50 and li.total_price == li.quantity)
-        ]
-        if len(anomalies) == 1:
-            normal_sum = sum(li.total_price for li in line_items if li not in anomalies)
-            rem = round(total_amount - normal_sum, 2)
-            if 0 < rem <= total_amount and rem < 15000.0:
-                logger.info(
-                    "Reconciled price anomaly for '%s' from %.2f to %.2f based on grand total %.2f",
-                    anomalies[0].item_name, anomalies[0].total_price, rem, total_amount,
-                )
-                anomalies[0].total_price = rem
-                anomalies[0].unit_price = rem
 
     # ── Step 11: Textual Deduplication (Layer 2) ─────────────────────────────
     text_fp = dedup.compute_text_fingerprint(merchant_name, receipt_date, total_amount)

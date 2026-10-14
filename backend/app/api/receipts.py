@@ -51,6 +51,10 @@ async def upload_receipt(
         "single",
         description="'single' for one receipt, 'batch' for multi-receipt session",
     ),
+    ocr_engine: str = Form(
+        "auto",
+        description="'auto' (prefers Gemini if configured, with local fallback), 'gemini', or 'local'",
+    ),
 ) -> UploadReceiptResponse:
     """
     Multipart receipt image upload endpoint.
@@ -100,6 +104,7 @@ async def upload_receipt(
             image_bytes=image_bytes,
             device_timestamp=device_timestamp,
             capture_mode=capture_mode,
+            ocr_engine=ocr_engine,
         )
     except ValueError as exc:
         # Image could not be decoded or is too blurry

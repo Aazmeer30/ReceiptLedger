@@ -54,6 +54,13 @@ async def health_check() -> HealthResponse:
     except Exception as exc:
         easy_status = f"error: {exc}"
 
+    # ── Gemini (Google AI Studio) ─────────────────────────────────────────────
+    try:
+        from app.services.gemini_client import is_available as gemini_available
+        gemini_status = f"ok (model={settings.gemini_model})" if gemini_available() else "disabled (no API key)"
+    except Exception as exc:
+        gemini_status = f"error: {exc}"
+
     # ── Database ──────────────────────────────────────────────────────────────
     db_status = "supabase" if settings.supabase_enabled else "in_memory (dev mode)"
 
@@ -65,6 +72,7 @@ async def health_check() -> HealthResponse:
             cloud_vision=cv_status,
             tesseract=tess_status,
             easyocr=easy_status,
+            gemini=gemini_status,
             database=db_status,
         ),
     )
