@@ -1,0 +1,1131 @@
+[
+  {
+    "filename": "challenging_carbon_copy_karyana.jpg",
+    "filesize_kb": 351.6,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 4.3,
+      "merchant_name": "Subhan Allah Karyana Store",
+      "receipt_date": "2026-10-11",
+      "stated_total": 2600.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 2600.0,
+      "items": [
+        {
+          "raw_text": "Daal Mash 1kg 540",
+          "item_name": "Daal Mash",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 540.0,
+          "total_price": 540.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Surf Excel 500g 310",
+          "item_name": "Surf Excel",
+          "quantity": 500.0,
+          "unit": "g",
+          "unit_price": 0.62,
+          "total_price": 310.0,
+          "category": "Household & Cleaning",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Tapal Danedar 200g 380",
+          "item_name": "Tapal Danedar Tea",
+          "quantity": 200.0,
+          "unit": "g",
+          "unit_price": 1.9,
+          "total_price": 380.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Lifebuoy Soap 3 pcs 330",
+          "item_name": "Lifebuoy Soap",
+          "quantity": 3.0,
+          "unit": "pcs",
+          "unit_price": 110.0,
+          "total_price": 330.0,
+          "category": "Personal Care",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Cooking Oil 2L 1040",
+          "item_name": "Cooking Oil",
+          "quantity": 2.0,
+          "unit": "ltr",
+          "unit_price": 520.0,
+          "total_price": 1040.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 3.34,
+      "receipt_type": "PRINTED",
+      "token_count": 125,
+      "mean_conf": 0.619,
+      "items_count": 5,
+      "items_sum": 2600.0,
+      "items": [
+        {
+          "item_name": "Black & White Gram (Daal Mash)",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 540.0,
+          "total_price": 540.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Washing Powder / Detergent",
+          "quantity": 500.0,
+          "unit": "g",
+          "unit_price": 0.62,
+          "total_price": 310.0,
+          "category": "Household & Cleaning",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Tea (Chai Patti)",
+          "quantity": 200.0,
+          "unit": "g",
+          "unit_price": 1.9,
+          "total_price": 380.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Soap & Handwash",
+          "quantity": 3.0,
+          "unit": "pcs",
+          "unit_price": 110.0,
+          "total_price": 330.0,
+          "category": "Personal Care",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Cooking Oil",
+          "quantity": 2.0,
+          "unit": "ltr",
+          "unit_price": 520.0,
+          "total_price": 1040.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        }
+      ]
+    }
+  },
+  {
+    "filename": "challenging_greengrocer_marble.jpg",
+    "filesize_kb": 118.7,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 4.02,
+      "merchant_name": "Chaudhry Sabzi & Fruit Shop",
+      "receipt_date": "2026-10-10",
+      "stated_total": 1600.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 1600.0,
+      "items": [
+        {
+          "raw_text": "Aloo 5kg 450",
+          "item_name": "Potato",
+          "quantity": 5.0,
+          "unit": "kg",
+          "unit_price": 90.0,
+          "total_price": 450.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Pyaz 3kg 390",
+          "item_name": "Onion",
+          "quantity": 3.0,
+          "unit": "kg",
+          "unit_price": 130.0,
+          "total_price": 390.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Tamatar 2kg 260",
+          "item_name": "Tomato",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 130.0,
+          "total_price": 260.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Adrak 250g 220",
+          "item_name": "Ginger",
+          "quantity": 250.0,
+          "unit": "g",
+          "unit_price": 0.88,
+          "total_price": 220.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Lehsan 250g 280",
+          "item_name": "Garlic",
+          "quantity": 250.0,
+          "unit": "g",
+          "unit_price": 1.12,
+          "total_price": 280.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.72,
+      "receipt_type": "PRINTED",
+      "token_count": 54,
+      "mean_conf": 0.687,
+      "items_count": 5,
+      "items_sum": 1600.0,
+      "items": [
+        {
+          "item_name": "Potatoes (Aloo)",
+          "quantity": 5.0,
+          "unit": "kg",
+          "unit_price": 90.0,
+          "total_price": 450.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Onions (Pyaz)",
+          "quantity": 3.0,
+          "unit": "kg",
+          "unit_price": 130.0,
+          "total_price": 390.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Tomatoes (Tamatar)",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 130.0,
+          "total_price": 260.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Ginger & Garlic",
+          "quantity": 250.0,
+          "unit": "g",
+          "unit_price": 0.88,
+          "total_price": 220.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9466666666666667
+        },
+        {
+          "item_name": "Ginger & Garlic",
+          "quantity": 250.0,
+          "unit": "g",
+          "unit_price": 1.12,
+          "total_price": 280.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9466666666666667
+        }
+      ]
+    }
+  },
+  {
+    "filename": "challenging_pharmacy_receipt.jpg",
+    "filesize_kb": 383.1,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 5.07,
+      "merchant_name": "FAZAL DIN & SONS CHEMISTS",
+      "receipt_date": "2026-10-12",
+      "stated_total": 1500.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": "Subtotal printed on receipt is 1300.00, but total amount shown is 1500.00.",
+      "items_count": 5,
+      "items_sum": 1300.0,
+      "items": [
+        {
+          "raw_text": "Panadol Extra 2 pkt 340.00",
+          "item_name": "Panadol Extra",
+          "quantity": 2.0,
+          "unit": "pkt",
+          "unit_price": 170.0,
+          "total_price": 340.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Disprin 300mg 1 pkt 120.00",
+          "item_name": "Disprin 300mg",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 120.0,
+          "total_price": 120.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Sancos Syrup 1 bot 280.00",
+          "item_name": "Sancos Syrup",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 280.0,
+          "total_price": 280.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Dettol Antiseptic 1 bot 310.00",
+          "item_name": "Dettol Antiseptic",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 310.0,
+          "total_price": 310.0,
+          "category": "Household & Cleaning",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Surgical Mask 1 pkt 250.00",
+          "item_name": "Surgical Mask",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 250.0,
+          "total_price": 250.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 2.77,
+      "receipt_type": "PRINTED",
+      "token_count": 114,
+      "mean_conf": 0.768,
+      "items_count": 3,
+      "items_sum": 680.0,
+      "items": [
+        {
+          "item_name": "Pain & Fever Relief",
+          "quantity": 2.0,
+          "unit": "pkt",
+          "unit_price": 60.0,
+          "total_price": 120.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 0.9057142857142857
+        },
+        {
+          "item_name": "Cough, Cold & Flu",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 280.0,
+          "total_price": 310.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 0.915
+        },
+        {
+          "item_name": "Medical Supplies & PPE",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 250.0,
+          "total_price": 250.0,
+          "category": "Health & Pharmacy",
+          "confidence_score": 0.8899999999999999
+        }
+      ]
+    }
+  },
+  {
+    "filename": "challenging_pos_creased_roll.jpg",
+    "filesize_kb": 381.9,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 5.58,
+      "merchant_name": "NAHEED SUPERMARKET",
+      "receipt_date": "2026-10-12",
+      "stated_total": 1480.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 1480.0,
+      "items": [
+        {
+          "raw_text": "OLPERS MILK 1.5L 1 420.00 420.00",
+          "item_name": "Olpers Milk 1.5L",
+          "quantity": 1.0,
+          "unit": "ltr",
+          "unit_price": 420.0,
+          "total_price": 420.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "NAT KETCHUP 800G 1 480.00 480.00",
+          "item_name": "National Ketchup 800g",
+          "quantity": 1.0,
+          "unit": "g",
+          "unit_price": 480.0,
+          "total_price": 480.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "SHAN BIRYANI 50G 2 140.00 280.00",
+          "item_name": "Shan Biryani Masala 50g",
+          "quantity": 2.0,
+          "unit": "g",
+          "unit_price": 140.0,
+          "total_price": 280.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "DAWN BREAD LARGE 1 190.00 190.00",
+          "item_name": "Dawn Bread Large",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 190.0,
+          "total_price": 190.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "TUC CRACKERS 1 110.00 110.00",
+          "item_name": "Tuc Crackers",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 110.0,
+          "total_price": 110.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 2.72,
+      "receipt_type": "HANDWRITTEN",
+      "token_count": 182,
+      "mean_conf": 0.722,
+      "items_count": 5,
+      "items_sum": 1480.0,
+      "items": [
+        {
+          "item_name": "Milk",
+          "quantity": 1.5,
+          "unit": "ltr",
+          "unit_price": 420.0,
+          "total_price": 420.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.879
+        },
+        {
+          "item_name": "Tomato Ketchup",
+          "quantity": 800.0,
+          "unit": "g",
+          "unit_price": 0.6,
+          "total_price": 480.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Cooked Biryani & Rice Meals",
+          "quantity": 50.0,
+          "unit": "g",
+          "unit_price": 5.6,
+          "total_price": 280.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9125
+        },
+        {
+          "item_name": "Bread",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 190.0,
+          "total_price": 190.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.904
+        },
+        {
+          "item_name": "Biscuits & Cookies",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 110.0,
+          "total_price": 110.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 0.874
+        }
+      ]
+    }
+  },
+  {
+    "filename": "handwritten_receipt_challenging.jpg",
+    "filesize_kb": 977.1,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 8.59,
+      "merchant_name": "Bismillah General Store",
+      "receipt_date": "2023-10-10",
+      "stated_total": 1230.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": "Prices for individual items except bread are not explicitly listed, only the grand total is shown.",
+      "items_count": 5,
+      "items_sum": 90.0,
+      "items": [
+        {
+          "raw_text": "Doodh 2kg",
+          "item_name": "Milk",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9
+        },
+        {
+          "raw_text": "Dahi 1kg",
+          "item_name": "Yogurt",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9
+        },
+        {
+          "raw_text": "Anday 1dz",
+          "item_name": "Eggs",
+          "quantity": 1.0,
+          "unit": "dzn",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9
+        },
+        {
+          "raw_text": "Cheeni 1kg",
+          "item_name": "Sugar",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9
+        },
+        {
+          "raw_text": "Bread small 90",
+          "item_name": "Bread Small",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 90.0,
+          "total_price": 90.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.9
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.97,
+      "receipt_type": "HANDWRITTEN",
+      "token_count": 68,
+      "mean_conf": 0.438,
+      "items_count": 6,
+      "items_sum": 437.0,
+      "items": [
+        {
+          "item_name": "Milk",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 29.0,
+          "total_price": 29.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Yogurt (Dahi)",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 81.0,
+          "total_price": 81.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Eggs",
+          "quantity": 1.0,
+          "unit": "dzn",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Small O% As",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 90.0,
+          "total_price": 90.0,
+          "category": "Miscellaneous",
+          "confidence_score": 0.574
+        },
+        {
+          "item_name": "Bread",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 7.0,
+          "total_price": 7.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Tota Ee",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 230.0,
+          "total_price": 230.0,
+          "category": "Miscellaneous",
+          "confidence_score": 0.508
+        }
+      ]
+    }
+  },
+  {
+    "filename": "handwritten_receipt_sample.jpg",
+    "filesize_kb": 1051.4,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 11.65,
+      "merchant_name": "Madina Karyana Store",
+      "receipt_date": "2026-09-10",
+      "stated_total": 3030.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": "Handwritten receipt in English and Urdu, very clear handwriting.",
+      "items_count": 5,
+      "items_sum": 3030.0,
+      "items": [
+        {
+          "raw_text": "Atta 10kg 1400",
+          "item_name": "Wheat Flour",
+          "quantity": 10.0,
+          "unit": "kg",
+          "unit_price": 140.0,
+          "total_price": 1400.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Chawal 2kg 450",
+          "item_name": "Rice",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 225.0,
+          "total_price": 450.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Cheeni 3kg 420",
+          "item_name": "Sugar",
+          "quantity": 3.0,
+          "unit": "kg",
+          "unit_price": 140.0,
+          "total_price": 420.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Daal Chana 1kg 260",
+          "item_name": "Chana Lentils",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 260.0,
+          "total_price": 260.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Ghee 1kg 500",
+          "item_name": "Clarified Butter",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 500.0,
+          "total_price": 500.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.95,
+      "receipt_type": "HANDWRITTEN",
+      "token_count": 55,
+      "mean_conf": 0.545,
+      "items_count": 5,
+      "items_sum": 2531.0,
+      "items": [
+        {
+          "item_name": "Wheat Flour (Atta)",
+          "quantity": 10.0,
+          "unit": "kg",
+          "unit_price": 1400.0,
+          "total_price": 1400.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Basmati Rice",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 225.0,
+          "total_price": 450.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Sugar",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 420.0,
+          "total_price": 420.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "White Chickpeas (Safaid Chana)",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 260.56,
+          "total_price": 261.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Banaspati Ghee",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 0.0,
+          "total_price": 0.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "filename": "javed_nahari_sample.png",
+    "filesize_kb": 354.3,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 8.32,
+      "merchant_name": "Javed Nahari",
+      "receipt_date": "2022-02-03",
+      "stated_total": 1580.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 1580.0,
+      "items": [
+        {
+          "raw_text": "Disposable Glass 5 4 P 20",
+          "item_name": "Disposable Glass",
+          "quantity": 4.0,
+          "unit": "pcs",
+          "unit_price": 5.0,
+          "total_price": 20.0,
+          "category": "Household & Cleaning",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Mineral Water (L) 80 1 P 80",
+          "item_name": "Mineral Water (L)",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 80.0,
+          "total_price": 80.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Can 70 3 P 210",
+          "item_name": "Can",
+          "quantity": 3.0,
+          "unit": "pcs",
+          "unit_price": 70.0,
+          "total_price": 210.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Nihari Double 560 2 P 1,120",
+          "item_name": "Nihari Double",
+          "quantity": 2.0,
+          "unit": "pcs",
+          "unit_price": 560.0,
+          "total_price": 1120.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Roti 15 10 P 150",
+          "item_name": "Roti",
+          "quantity": 10.0,
+          "unit": "pcs",
+          "unit_price": 15.0,
+          "total_price": 150.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.13,
+      "receipt_type": "HANDWRITTEN",
+      "token_count": 98,
+      "mean_conf": 0.547,
+      "items_count": 4,
+      "items_sum": 810.0,
+      "items": [
+        {
+          "item_name": "Dining Disposables",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 20.0,
+          "total_price": 20.0,
+          "category": "Household & Cleaning",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Mineral Water",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 80.0,
+          "total_price": 80.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Cooked Nihari & Traditional Stews",
+          "quantity": 1.0,
+          "unit": "plate",
+          "unit_price": 560.0,
+          "total_price": 560.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Traditional Breads (Naan & Roti)",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 150.0,
+          "total_price": 150.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "filename": "metro_safari_park_sample.png",
+    "filesize_kb": 206.3,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 8.35,
+      "merchant_name": "METRO Pakistan (Pvt) Limited",
+      "receipt_date": "2026-05-09",
+      "stated_total": 189.66,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": "Receipt is partially cut off at the bottom, but all visible items captured correctly.",
+      "items_count": 2,
+      "items_sum": 189.66,
+      "items": [
+        {
+          "raw_text": "129728 MITHA PER KG 0.640 199.00 199.00 127.36 0.00 127.36",
+          "item_name": "Sweet Melon",
+          "quantity": 0.64,
+          "unit": "kg",
+          "unit_price": 199.0,
+          "total_price": 127.36,
+          "category": "Groceries & Food",
+          "confidence_score": 0.95
+        },
+        {
+          "raw_text": "101866 SPINACH PER KG 0.700 89.00 89.00 62.30 0.00 62.30",
+          "item_name": "Spinach",
+          "quantity": 0.7,
+          "unit": "kg",
+          "unit_price": 89.0,
+          "total_price": 62.3,
+          "category": "Groceries & Food",
+          "confidence_score": 0.95
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.32,
+      "receipt_type": "PRINTED",
+      "token_count": 105,
+      "mean_conf": 0.753,
+      "items_count": 2,
+      "items_sum": 190.26,
+      "items": [
+        {
+          "item_name": "Melons & Watermelons",
+          "quantity": 0.4,
+          "unit": "kg",
+          "unit_price": 199.0,
+          "total_price": 127.96,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Spinach & Greens (Palak)",
+          "quantity": 0.7,
+          "unit": "kg",
+          "unit_price": 89.0,
+          "total_price": 62.3,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "filename": "printed_receipt_challenging.jpg",
+    "filesize_kb": 950.5,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 8.25,
+      "merchant_name": "IMTIAZ SUPER MARKET (KHI)",
+      "receipt_date": "2026-10-10",
+      "stated_total": 1340.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 1340.0,
+      "items": [
+        {
+          "raw_text": "Bread Large 1 180.00",
+          "item_name": "Bread Large",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 180.0,
+          "total_price": 180.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Eggs 1 Dozen 1 340.00",
+          "item_name": "Eggs",
+          "quantity": 1.0,
+          "unit": "dzn",
+          "unit_price": 340.0,
+          "total_price": 340.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Butter 200g 1 380.00",
+          "item_name": "Butter 200g",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 380.0,
+          "total_price": 380.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Yogurt 500g 1 160.00",
+          "item_name": "Yogurt 500g",
+          "quantity": 1.0,
+          "unit": "pcs",
+          "unit_price": 160.0,
+          "total_price": 160.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "Juice 1L 1 280.00",
+          "item_name": "Juice 1L",
+          "quantity": 1.0,
+          "unit": "ltr",
+          "unit_price": 280.0,
+          "total_price": 280.0,
+          "category": "Snacks & Beverages",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.71,
+      "receipt_type": "PRINTED",
+      "token_count": 81,
+      "mean_conf": 0.629,
+      "items_count": 3,
+      "items_sum": 840.0,
+      "items": [
+        {
+          "item_name": "Bread",
+          "quantity": 1.0,
+          "unit": "pkt",
+          "unit_price": 180.0,
+          "total_price": 180.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Eggs",
+          "quantity": 1.0,
+          "unit": "dzn",
+          "unit_price": 340.0,
+          "total_price": 380.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Yogurt (Dahi)",
+          "quantity": 500.0,
+          "unit": "g",
+          "unit_price": 160.0,
+          "total_price": 280.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        }
+      ]
+    }
+  },
+  {
+    "filename": "printed_receipt_sample.jpg",
+    "filesize_kb": 839.2,
+    "gemini": {
+      "success": true,
+      "model": "gemini-3.5-flash-lite",
+      "elapsed": 7.96,
+      "merchant_name": "AL-MADINA SUPER MARKET",
+      "receipt_date": "2026-10-09",
+      "stated_total": 2610.0,
+      "currency": "PKR",
+      "ocr_quality": "high",
+      "notes": null,
+      "items_count": 5,
+      "items_sum": 2610.0,
+      "items": [
+        {
+          "raw_text": "1. CHAKKI ATTA 5KG 1 700.00 700.00",
+          "item_name": "Wheat Flour",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 700.0,
+          "total_price": 700.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "2. BASMATI RICE 2KG 1 450.00 450.00",
+          "item_name": "Basmati Rice",
+          "quantity": 1.0,
+          "unit": "kg",
+          "unit_price": 450.0,
+          "total_price": 450.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "3. COOKING OIL 1L 1 520.00 520.00",
+          "item_name": "Cooking Oil",
+          "quantity": 1.0,
+          "unit": "ltr",
+          "unit_price": 520.0,
+          "total_price": 520.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "4. MILK PACK 1LTR 1 290.00 290.00",
+          "item_name": "Milk Pack",
+          "quantity": 1.0,
+          "unit": "ltr",
+          "unit_price": 290.0,
+          "total_price": 290.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        },
+        {
+          "raw_text": "5. TAPAL TEA 430G 1 650.00 650.00",
+          "item_name": "Tapal Tea",
+          "quantity": 1.0,
+          "unit": "g",
+          "unit_price": 650.0,
+          "total_price": 650.0,
+          "category": "Groceries & Food",
+          "confidence_score": 1.0
+        }
+      ]
+    },
+    "local": {
+      "elapsed": 1.74,
+      "receipt_type": "PRINTED",
+      "token_count": 117,
+      "mean_conf": 0.668,
+      "items_count": 3,
+      "items_sum": 1870.0,
+      "items": [
+        {
+          "item_name": "Wheat Flour (Atta)",
+          "quantity": 5.0,
+          "unit": "kg",
+          "unit_price": 140.0,
+          "total_price": 700.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        },
+        {
+          "item_name": "Basmati Rice",
+          "quantity": 2.0,
+          "unit": "kg",
+          "unit_price": 260.0,
+          "total_price": 520.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.85
+        },
+        {
+          "item_name": "Milk",
+          "quantity": 1.0,
+          "unit": "ltr",
+          "unit_price": 650.0,
+          "total_price": 650.0,
+          "category": "Groceries & Food",
+          "confidence_score": 0.88
+        }
+      ]
+    }
+  }
+]

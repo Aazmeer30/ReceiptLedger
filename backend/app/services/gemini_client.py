@@ -67,7 +67,7 @@ _RECEIPT_PROMPT = (
     "6. Do NOT include subtotals, tax lines, grand totals, or payment rows in line_items.\n"
     "7. quantity defaults to 1.0 if not shown; unit defaults to pcs.\n"
     "8. category must be one of: Groceries & Food, Household & Cleaning, Personal Care, "
-    "Snacks & Beverages, Utilities & Bills, Miscellaneous.\n"
+    "Health & Pharmacy, Snacks & Beverages, Utilities & Bills, Miscellaneous.\n"
 )
 
 

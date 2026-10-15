@@ -1,4 +1,4 @@
-"""
+r"""
 ReceiptLedger – Gemini vs Local Pipeline A/B Test
 ==================================================
 Runs BOTH the local OCR pipeline (Tesseract + fuzzy matching) AND the Gemini
