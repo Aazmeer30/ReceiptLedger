@@ -19,9 +19,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 
+from app.core.auth import UserSession, get_current_user
 from app.core.config import settings
 from app.core.models import ReceiptStatus, UploadReceiptResponse
 from app.services.ingestion import ingest_receipt
@@ -55,6 +56,7 @@ async def upload_receipt(
         "auto",
         description="'auto' (prefers Gemini if configured, with local fallback), 'gemini', or 'local'",
     ),
+    current_user: UserSession = Depends(get_current_user),
 ) -> UploadReceiptResponse:
     """
     Multipart receipt image upload endpoint.
@@ -104,6 +106,7 @@ async def upload_receipt(
             image_bytes=image_bytes,
             device_timestamp=device_timestamp,
             capture_mode=capture_mode,
+            user_id=current_user.user_id,
             ocr_engine=ocr_engine,
         )
     except ValueError as exc:

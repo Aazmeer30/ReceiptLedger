@@ -21,6 +21,7 @@ import base64
 import json
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.config import settings
@@ -38,7 +39,7 @@ _RECEIPT_PROMPT = (
     '  "merchant_name": "string or null",\n'
     '  "receipt_date": "YYYY-MM-DD or null",\n'
     '  "total_amount": 0.0,\n'
-    '  "currency": "PKR",\n'
+    '  "currency": "PKR or detected currency code (MYR, USD, EUR, CHF, etc.)",\n'
     '  "line_items": [\n'
     '    {\n'
     '      "raw_text": "original line as seen on receipt",\n'
@@ -146,7 +147,12 @@ def extract_receipt_data(
             last_error = exc
             continue
         except Exception as exc:
-            logger.warning("Gemini API call to model %s failed: %s", model_name, exc)
+            err_str = str(exc)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                logger.warning("Gemini model %s hit rate limit (429). Waiting 5s before next attempt...", model_name)
+                time.sleep(5.0)
+            else:
+                logger.warning("Gemini API call to model %s failed: %s", model_name, exc)
             last_error = exc
             continue
 

@@ -108,10 +108,36 @@ docker run -p 8000:8000 --env-file .env receiptledger-backend
 | Endpoint | Method | Description |
 |:---|:---:|:---|
 | `/api/v1/health` | `GET` | Health check and engine status |
+| `/api/v1/auth/login` | `POST` | Authenticate user credentials and issue JWT session token |
+| `/api/v1/auth/register` | `POST` | Register a new user account |
+| `/api/v1/auth/me` | `GET` | Inspect active user session profile |
 | `/api/v1/receipts/upload` | `POST` | Multipart receipt photo ingestion, duplicate check, and parsing |
 | `/api/v1/analytics/monthly` | `GET` | Aggregated monthly spend and category rollups |
 | `/api/v1/analytics/trends` | `GET` | Multi-month spending velocity trends |
 | `/api/v1/analytics/receipts` | `GET` | Paginated, searchable historical receipt ledger |
 | `/api/v1/review-queue` | `GET` | Items with confidence $< 0.85$ requiring confirmation |
 | `/api/v1/review-queue/{id}` | `PATCH` | Human-in-the-loop verification resolution |
+| `/api/v1/system/runs` | `GET` | List observability logs and historical evaluation runs |
+| `/api/v1/system/runs/{id}` | `GET` | Inspect full details of a specific benchmark/eval run |
+
+---
+
+## Observability & Evaluation Runs
+
+All evaluation test runs and benchmark outputs are automatically logged into `backend/logs/runs/` with timestamped descriptors:
+`YYYYMMDD_HHMMSS_<descriptor>.json`
+
+### Evaluation Commands
+
+1. **Test all 33 images with Gemini Vision**:
+   ```powershell
+   python test_all_images_gemini.py
+   ```
+   Evaluates all sample receipts and real web/SROIE receipts, calculates extraction accuracy, and saves a timestamped run log in `logs/runs/`.
+
+2. **A/B Test Gemini vs Local Tesseract Pipeline**:
+   ```powershell
+   python test_all_gemini_full.py
+   ```
+
 

@@ -73,3 +73,13 @@ desktop.ini
 # Media & Database Local Artifacts
 *.mp4
 *.db
+
+# Observability and evaluation run logs
+backend/logs/runs/*.json
+backend/logs/runs/*.log
+!backend/logs/runs/.gitkeep
+backend/gemini_all_images_eval.json
+backend/gemini_eval_results.json
+
+# Temporary PDF printable HTML files
+docs/*_PRINTABLE.html

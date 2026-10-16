@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from app.core.config import settings
+from app.core.run_logger import save_run_log
 from app.services.gemini_client import (
     extract_receipt_data,
     gemini_result_to_line_items,
@@ -207,7 +208,18 @@ def main():
     print(f"  {'-'*120}")
     print(f"  TOTALS: {total_gemini_items} items extracted across {len(all_results)} receipts | Total Spend: PKR {total_gemini_spend:,.2f} | Local Items: {total_local_items}")
 
-    # ── Save JSON Results ────────────────────────────────────────────────────
+    # ── Save Observability Run Log & JSON Results ─────────────────────────────
+    save_run_log(
+        descriptor="gemini_vs_local_eval",
+        records=all_results,
+        metrics={
+            "total_receipts": len(all_results),
+            "total_gemini_items": total_gemini_items,
+            "total_local_items": total_local_items,
+            "total_gemini_spend": total_gemini_spend,
+        },
+        metadata={"model": settings.gemini_model},
+    )
     out_json = BASE_DIR / "gemini_eval_results.json"
     out_json.write_text(json.dumps(all_results, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n[INFO] Complete JSON evaluation saved to: {out_json}")
