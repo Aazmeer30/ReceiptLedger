@@ -1,6 +1,7 @@
 """
 ReceiptLedger – Receipt Upload Endpoint
 POST /api/v1/receipts/upload
+GET  /api/v1/receipts/{id}/image
 
 Accepts a multipart/form-data upload containing the receipt image plus optional
 metadata (device_timestamp, capture_mode).  Runs the full ingestion pipeline
@@ -17,14 +18,17 @@ HTTP Status codes:
 from __future__ import annotations
 
 import logging
+import mimetypes
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path as FPath, UploadFile, status
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 
 from app.core.auth import UserSession, get_current_user
 from app.core.config import settings
 from app.core.models import ReceiptStatus, UploadReceiptResponse
+from app.services import store
 from app.services.ingestion import ingest_receipt
 
 logger = logging.getLogger(__name__)
@@ -130,3 +134,68 @@ async def upload_receipt(
         )
 
     return result
+
+
+@router.get(
+    "/receipts/{receipt_id}/image",
+    summary="Serve the preprocessed receipt image",
+    tags=["Receipts"],
+    responses={
+        200: {"description": "Receipt image (JPEG, PNG, or WebP)."},
+        302: {"description": "Redirect to Supabase Storage signed URL."},
+        404: {"description": "Image not found for this receipt."},
+    },
+)
+async def get_receipt_image(
+    receipt_id: str = FPath(..., description="UUID of the receipt"),
+    signed_url: bool = False,
+) -> StreamingResponse:
+    """
+    Return the preprocessed image for a receipt.
+
+    If ``signed_url=true`` is requested and Supabase Storage is enabled,
+    redirects to a temporary signed URL (avoids proxying large binary data).
+    Otherwise the image bytes are streamed directly from local storage.
+
+    The image was saved by the ingestion pipeline immediately after OCR
+    preprocessing (deskew, contrast normalisation, CLAHE).
+    """
+    # Verify the receipt exists
+    receipt = store.get_receipt(receipt_id)
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Receipt '{receipt_id}' not found.",
+        )
+
+    # Option 1: Supabase signed URL redirect
+    if signed_url and settings.supabase_enabled:
+        url = store.get_supabase_image_url(receipt_id, expires_in=3600)
+        if url:
+            return RedirectResponse(url=url, status_code=302)
+
+    # Option 2: Stream bytes from local disk / Supabase Storage
+    image_bytes = store.get_receipt_image_bytes(receipt_id)
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image for receipt '{receipt_id}' not found. "
+                   "It may have been processed before image storage was enabled.",
+        )
+
+    # Detect media type from magic bytes
+    if image_bytes[:4] == b"\x89PNG":
+        media_type = "image/png"
+    elif image_bytes[:4] == b"RIFF":
+        media_type = "image/webp"
+    else:
+        media_type = "image/jpeg"
+
+    return StreamingResponse(
+        iter([image_bytes]),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="receipt_{receipt_id}.img"',
+            "Cache-Control": "private, max-age=3600",
+        },
+    )

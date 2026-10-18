@@ -532,7 +532,10 @@ def get_monthly_summary(year: int, month: int) -> Dict:
     Aggregate spend data for the given year/month.
     Returns category_breakdown, total_spend, receipt_count.
     """
+    import calendar as _cal
+
     period = f"{year:04d}-{month:02d}"
+    _, last_day = _cal.monthrange(year, month)
 
     client = get_supabase_client()
     if client:
@@ -540,7 +543,7 @@ def get_monthly_summary(year: int, month: int) -> Dict:
             # Receipts for period
             r_query = client.table("receipts").select("id, total_amount, status") \
                 .gte("receipt_date", f"{period}-01") \
-                .lte("receipt_date", f"{period}-31") \
+                .lte("receipt_date", f"{period}-{last_day:02d}") \
                 .neq("status", "DUPLICATE").execute()
 
             if r_query.data is not None:
@@ -595,9 +598,13 @@ def get_monthly_trend(months: int = 3) -> List[Dict]:
     today = date.today()
 
     for i in range(months - 1, -1, -1):
-        target = today.replace(day=1) - timedelta(days=i * 28)
-        target = target.replace(day=1)
-        summary = get_monthly_summary(target.year, target.month)
+        # Step back month-by-month using first-of-month arithmetic (avoids 28/30/31 day ambiguity)
+        m = today.month - i
+        y = today.year
+        while m < 1:
+            m += 12
+            y -= 1
+        summary = get_monthly_summary(y, m)
         results.append(summary)
 
     return results
@@ -951,3 +958,132 @@ def reset_store() -> None:
             logger.info("Cleared all receipts and related records from Supabase")
         except Exception as exc:
             logger.warning("Supabase reset_store error: %s", exc)
+
+
+# ── Image Storage Operations ──────────────────────────────────────────────────
+
+def _image_store_path() -> "Path":
+    """Return the absolute path to the local image store directory, creating it if needed."""
+    from pathlib import Path
+    base = Path(settings.image_store_dir)
+    if not base.is_absolute():
+        # Resolve relative to backend/ root (two levels up from this file: services → app → backend)
+        base = Path(__file__).resolve().parents[2] / settings.image_store_dir
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def save_receipt_image(receipt_id: str, image_bytes: bytes, ext: str = "jpg") -> Optional[str]:
+    """
+    Persist a preprocessed receipt image.
+
+    Strategy (in order of preference):
+    1. Upload to Supabase Storage bucket (``receipt-images``) when configured.
+    2. Save to local disk under ``settings.image_store_dir``.
+
+    Returns the local file path (str) on success, or None on failure.
+    """
+    from pathlib import Path
+
+    local_path = _image_store_path() / f"{receipt_id}.{ext}"
+
+    # Always save locally as a reliable fallback
+    try:
+        local_path.write_bytes(image_bytes)
+        logger.debug("Receipt image saved locally: %s", local_path)
+    except Exception as exc:
+        logger.warning("Failed to save receipt image locally: %s", exc)
+        return None
+
+    # Attempt Supabase Storage upload (non-blocking — local copy is the source of truth)
+    client = get_supabase_client()
+    if client:
+        try:
+            storage_path = f"{receipt_id}.{ext}"
+            client.storage.from_(settings.supabase_storage_bucket).upload(
+                path=storage_path,
+                file=image_bytes,
+                file_options={"content-type": f"image/{ext}", "upsert": "true"},
+            )
+            logger.info("Receipt image uploaded to Supabase Storage: %s", storage_path)
+        except Exception as exc:
+            logger.warning("Supabase Storage upload failed (local copy retained): %s", exc)
+
+    return str(local_path)
+
+
+def get_receipt_image_path(receipt_id: str) -> Optional[str]:
+    """
+    Return the local filesystem path for a receipt image, or None if not found.
+    Searches for any supported extension (jpg, jpeg, png, webp).
+    """
+    base = _image_store_path()
+    for ext in ("jpg", "jpeg", "png", "webp"):
+        p = base / f"{receipt_id}.{ext}"
+        if p.exists():
+            return str(p)
+    return None
+
+
+def get_receipt_image_bytes(receipt_id: str) -> Optional[bytes]:
+    """
+    Return raw bytes of a receipt image.
+
+    Tries Supabase Storage first (for consistency across server instances), then
+    falls back to the local filesystem copy.
+    """
+    # Try Supabase Storage first
+    client = get_supabase_client()
+    if client:
+        for ext in ("jpg", "jpeg", "png", "webp"):
+            try:
+                data = client.storage.from_(settings.supabase_storage_bucket).download(
+                    f"{receipt_id}.{ext}"
+                )
+                if data:
+                    logger.debug("Receipt image retrieved from Supabase Storage: %s.%s", receipt_id, ext)
+                    return data
+            except Exception:
+                continue
+
+    # Fall back to local disk
+    local_path = get_receipt_image_path(receipt_id)
+    if local_path:
+        try:
+            from pathlib import Path
+            return Path(local_path).read_bytes()
+        except Exception as exc:
+            logger.warning("Failed to read local receipt image: %s", exc)
+
+    return None
+
+
+def get_supabase_image_url(receipt_id: str, expires_in: int = 3600) -> Optional[str]:
+    """
+    Generate a temporary signed URL for a receipt image stored in Supabase Storage.
+
+    Args:
+        receipt_id: UUID of the receipt.
+        expires_in: Seconds until the URL expires (default 1 hour).
+
+    Returns:
+        Signed URL string, or None if Supabase Storage is unavailable.
+    """
+    client = get_supabase_client()
+    if not client:
+        return None
+
+    for ext in ("jpg", "jpeg", "png", "webp"):
+        try:
+            result = client.storage.from_(settings.supabase_storage_bucket).create_signed_url(
+                path=f"{receipt_id}.{ext}",
+                expires_in=expires_in,
+            )
+            url = result.get("signedURL") or result.get("signedUrl")
+            if url:
+                return url
+        except Exception:
+            continue
+
+    return None
+

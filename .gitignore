@@ -84,3 +84,10 @@ backend/gemini_eval_results.json
 # Temporary PDF printable HTML files
 docs/*_PRINTABLE.html
 docs/**/*_PRINTABLE.html
+
+# Receipt images (preprocessed; stored in Supabase Storage in production)
+backend/data/images/*.jpg
+backend/data/images/*.jpeg
+backend/data/images/*.png
+backend/data/images/*.webp
+!backend/data/images/.gitkeep

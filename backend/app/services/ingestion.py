@@ -266,6 +266,10 @@ async def ingest_receipt(
     )
     receipt_id = receipt_row["id"]
 
+    # Save preprocessed image (local + Supabase Storage)
+    img_ext = "png" if processed_bytes[:4] == b"\x89PNG" else "jpg"
+    store.save_receipt_image(receipt_id, processed_bytes, ext=img_ext)
+
     # Register hashes for future dedup (in-memory + database)
     dedup.register_hashes(receipt_id, phash_str, text_fp)
     store.insert_receipt_hash(receipt_id, phash_str, text_fp)

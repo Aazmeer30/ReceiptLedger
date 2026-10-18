@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    # Supabase Storage bucket name for receipt images
+    supabase_storage_bucket: str = "receipt-images"
+
+    # ── Image Storage ────────────────────────────────────────────────────────
+    # Local directory where preprocessed receipt images are saved as a fallback.
+    # Relative to the project root (backend/), or set an absolute path.
+    image_store_dir: str = "data/images"
 
     # ── Pipeline Tuning ──────────────────────────────────────────────────────
     # Confidence threshold below which items are flagged for review
