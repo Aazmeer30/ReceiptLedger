@@ -160,8 +160,17 @@ async def get_review_crop(
 
     h, w = img.shape[:2]
 
-    # Determine item index within all line items for this receipt
+    # Determine item index and bounding box within all line items for this receipt
     all_items = store.get_line_items_for_receipt(receipt_id)
+    target_item = next((li for li in all_items if li.get("id") == line_item_id), None)
+    if not target_item or not target_item.get("bbox"):
+        cached_li = store.get_line_item(line_item_id)
+        if cached_li:
+            if not target_item:
+                target_item = cached_li
+            elif cached_li.get("bbox"):
+                target_item["bbox"] = cached_li["bbox"]
+
     item_ids = [li["id"] for li in all_items]
     try:
         item_idx = item_ids.index(line_item_id)
@@ -169,17 +178,50 @@ async def get_review_crop(
         item_idx = 0
     n_items = max(len(item_ids), 1)
 
-    # Map ordinal position to vertical fraction of receipt image
-    # Receipts typically have ~15% header and ~10% footer; body occupies 75%
-    header_frac = 0.15
-    footer_frac = 0.10
-    body_frac = 1.0 - header_frac - footer_frac
+    crop_method = "ordinal_heuristic"
+    bbox = target_item.get("bbox") if target_item else None
 
-    item_center_frac = header_frac + body_frac * ((item_idx + 0.5) / n_items)
-    band_half = (body_frac / n_items) / 2 + padding_pct
+    # Check if normalized or pixel bounding box is available for pixel-perfect cropping
+    if bbox:
+        ymin, ymax, xmin, xmax = None, None, None, None
+        if isinstance(bbox, dict):
+            ymin = bbox.get("ymin") if "ymin" in bbox else bbox.get("y_min")
+            ymax = bbox.get("ymax") if "ymax" in bbox else bbox.get("y_max")
+            xmin = bbox.get("xmin") if "xmin" in bbox else bbox.get("x_min")
+            xmax = bbox.get("xmax") if "xmax" in bbox else bbox.get("x_max")
+        elif isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+            ymin, xmin, ymax, xmax = bbox[0], bbox[1], bbox[2], bbox[3]
 
-    y_min = max(0, int((item_center_frac - band_half) * h))
-    y_max = min(h, int((item_center_frac + band_half) * h))
+        if ymin is not None and ymax is not None:
+            try:
+                ymin_f, ymax_f = float(ymin), float(ymax)
+                # If coordinates are normalized (0.0 to 1.0)
+                if ymax_f <= 1.0:
+                    y_min = max(0, int((ymin_f - padding_pct) * h))
+                    y_max = min(h, int((ymax_f + padding_pct) * h))
+                else:
+                    # Raw pixel coordinates
+                    pad_px = int(h * padding_pct)
+                    y_min = max(0, int(ymin_f) - pad_px)
+                    y_max = min(h, int(ymax_f) + pad_px)
+
+                if y_max > y_min:
+                    crop_method = "bbox"
+            except (ValueError, TypeError):
+                pass
+
+    if crop_method != "bbox":
+        # Fall back to ordinal position heuristics:
+        # Receipts typically have ~15% header and ~10% footer; body occupies 75%
+        header_frac = 0.15
+        footer_frac = 0.10
+        body_frac = 1.0 - header_frac - footer_frac
+
+        item_center_frac = header_frac + body_frac * ((item_idx + 0.5) / n_items)
+        band_half = (body_frac / n_items) / 2 + padding_pct
+
+        y_min = max(0, int((item_center_frac - band_half) * h))
+        y_max = min(h, int((item_center_frac + band_half) * h))
 
     crop = img[y_min:y_max, 0:w]
 
@@ -197,6 +239,7 @@ async def get_review_crop(
         headers={
             "Content-Disposition": f'inline; filename="crop_{queue_id}.jpg"',
             "Cache-Control": "private, max-age=300",
+            "X-Crop-Method": crop_method,
             "X-Crop-Item-Index": str(item_idx),
             "X-Crop-Item-Count": str(n_items),
             "X-Crop-Y-Min": str(y_min),

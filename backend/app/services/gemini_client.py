@@ -49,7 +49,8 @@ _RECEIPT_PROMPT = (
     '      "unit_price": 0.0,\n'
     '      "total_price": 0.0,\n'
     '      "category": "Groceries & Food",\n'
-    '      "confidence_score": 0.9\n'
+    '      "confidence_score": 0.9,\n'
+    '      "bbox": {"ymin": 0.25, "xmin": 0.05, "ymax": 0.29, "xmax": 0.95}\n'
     '    }\n'
     '  ],\n'
     '  "ocr_quality": "high or medium or low",\n'
@@ -75,6 +76,8 @@ _RECEIPT_PROMPT = (
     "8. quantity defaults to 1.0 if not shown; unit defaults to pcs.\n"
     "9. category must be one of: Groceries & Food, Household & Cleaning, Personal Care, "
     "Health & Pharmacy, Snacks & Beverages, Utilities & Bills, Miscellaneous.\n"
+    "10. bbox (strongly recommended): normalized bounding box [ymin, xmin, ymax, xmax] or "
+    '{"ymin": float, "xmin": float, "ymax": float, "xmax": float} with coordinates between 0.0 and 1.0 spanning the item line.\n'
 )
 
 
@@ -166,6 +169,38 @@ def extract_receipt_data(
     return None
 
 
+def _normalize_bbox(raw_bbox: Any) -> Optional[Dict[str, float]]:
+    """Helper to convert any bbox representation (dict, list, 0-1000 scale) into normalized 0.0-1.0 dict."""
+    if not raw_bbox:
+        return None
+    ymin, xmin, ymax, xmax = None, None, None, None
+    if isinstance(raw_bbox, dict):
+        ymin = raw_bbox.get("ymin") if "ymin" in raw_bbox else raw_bbox.get("y_min")
+        xmin = raw_bbox.get("xmin") if "xmin" in raw_bbox else raw_bbox.get("x_min")
+        ymax = raw_bbox.get("ymax") if "ymax" in raw_bbox else raw_bbox.get("y_max")
+        xmax = raw_bbox.get("xmax") if "xmax" in raw_bbox else raw_bbox.get("x_max")
+    elif isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
+        ymin, xmin, ymax, xmax = raw_bbox[0], raw_bbox[1], raw_bbox[2], raw_bbox[3]
+
+    if ymin is None or ymax is None:
+        return None
+
+    try:
+        y1, x1, y2, x2 = float(ymin), float(xmin or 0.0), float(ymax), float(xmax or 1.0)
+        # If coordinates are given in 0-1000 scale (standard Gemini 2D box scale)
+        if y2 > 1.0 or x2 > 1.0:
+            if y2 <= 1000.0 and x2 <= 1000.0:
+                y1, x1, y2, x2 = y1 / 1000.0, x1 / 1000.0, y2 / 1000.0, x2 / 1000.0
+        return {
+            "ymin": round(max(0.0, min(1.0, y1)), 4),
+            "xmin": round(max(0.0, min(1.0, x1)), 4),
+            "ymax": round(max(0.0, min(1.0, y2)), 4),
+            "xmax": round(max(0.0, min(1.0, x2)), 4),
+        }
+    except (ValueError, TypeError):
+        return None
+
+
 def gemini_result_to_line_items(
     gemini_data: Dict[str, Any],
 ) -> List[LineItemCreate]:
@@ -176,6 +211,7 @@ def gemini_result_to_line_items(
     items: List[LineItemCreate] = []
     for raw in gemini_data.get("line_items", []):
         try:
+            bbox = _normalize_bbox(raw.get("bbox"))
             item = LineItemCreate(
                 raw_text=str(raw.get("raw_text", "")),
                 item_name=str(raw.get("item_name", "Unknown Item")).strip(),
@@ -186,6 +222,7 @@ def gemini_result_to_line_items(
                 confidence_score=float(raw.get("confidence_score", 0.85)),
                 category=str(raw.get("category", "Miscellaneous")),
                 is_verified=False,
+                bbox=bbox,
             )
             # Skip zero-price items with very low confidence (likely noise)
             if item.total_price <= 0 and item.unit_price <= 0 and item.confidence_score < 0.5:

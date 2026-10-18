@@ -107,6 +107,7 @@ class LineItemCreate(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     category: str = "Miscellaneous"
     is_verified: bool = False
+    bbox: Optional[Dict[str, float]] = None
 
 
 class LineItemResponse(BaseModel):
@@ -120,6 +121,7 @@ class LineItemResponse(BaseModel):
     category: str
     confidence_score: float
     is_verified: bool
+    bbox: Optional[Dict[str, float]] = None
 
 
 # ── Receipt ───────────────────────────────────────────────────────────────────

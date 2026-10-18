@@ -609,6 +609,121 @@ def test_api_review_queue():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TEST 12B: N+1 Query Elimination & BBox Coordinate Verification
+# ─────────────────────────────────────────────────────────────────────────────
+
+@register("Store & Analytics: list_receipts join query eliminates N+1 loop")
+def test_list_receipts_join_n_plus_one():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.services import store
+
+    # 1. Verify store.list_receipts(include_items=True)
+    all_with_items = store.list_receipts(include_items=True)
+    assert isinstance(all_with_items, list)
+    if len(all_with_items) > 0:
+        first = all_with_items[0]
+        assert "line_items" in first, "receipt missing pre-populated 'line_items' key"
+        assert isinstance(first["line_items"], list)
+        print(f"   Single join query fetched {len(all_with_items)} receipts with embedded line_items.")
+
+    # 2. Verify GET /api/v1/analytics/receipts API returns embedded line_items
+    client = TestClient(app)
+    resp = client.get("/api/v1/analytics/receipts?page=1&page_size=10")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "receipts" in data
+    assert "total" in data
+    assert "page" in data
+    if data["receipts"]:
+        first_r = data["receipts"][0]
+        assert "line_items" in first_r
+        print(f"   GET /analytics/receipts verified: page=1, size={len(data['receipts'])}, items={len(first_r['line_items'])}")
+
+
+@register("Normalizer: Spatial line_items extraction generates normalized bbox")
+def test_normalizer_spatial_bbox():
+    from app.core.models import OCRToken, BoundingBox
+    from app.services.normalizer import parse_lines_to_items
+
+    # Synthetic tokens on a 400x800 receipt
+    tokens = [
+        OCRToken(text="Super", confidence=0.95, bounding_box=BoundingBox(x_min=20, y_min=100, x_max=100, y_max=140)),
+        OCRToken(text="Basmati", confidence=0.92, bounding_box=BoundingBox(x_min=110, y_min=100, x_max=220, y_max=140)),
+        OCRToken(text="5kg", confidence=0.90, bounding_box=BoundingBox(x_min=230, y_min=100, x_max=290, y_max=140)),
+        OCRToken(text="1450.00", confidence=0.96, bounding_box=BoundingBox(x_min=300, y_min=100, x_max=380, y_max=140)),
+    ]
+    items = parse_lines_to_items([tokens], base_confidence=0.93, image_dims=(400, 800))
+    assert len(items) == 1
+    item = items[0]
+    assert item.bbox is not None, "item.bbox must not be None when image_dims are provided"
+    assert "ymin" in item.bbox and "ymax" in item.bbox
+    assert 0.0 <= item.bbox["ymin"] <= 1.0
+    assert 0.0 <= item.bbox["ymax"] <= 1.0
+    assert item.bbox["ymin"] == 100 / 800.0
+    assert item.bbox["ymax"] == 140 / 800.0
+    print(f"   Parsed item '{item.item_name}' with normalized bbox: {item.bbox}")
+
+
+@register("API: Review Queue crop uses bbox for pixel-perfect image slicing")
+def test_review_queue_crop_with_bbox():
+    import numpy as np
+    import cv2
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.services import store
+
+    # 1. Create a dummy receipt
+    r = store.insert_receipt(
+        merchant_name="BBox Test Market",
+        receipt_date="2026-10-18",
+        total_amount=500.0,
+        receipt_type="PRINTED",
+        status="PENDING_REVIEW",
+        ocr_confidence=0.60,
+    )
+    receipt_id = r["id"]
+
+    # 2. Generate and store a synthetic receipt image (height=600, width=300)
+    syn_img = np.full((600, 300, 3), 245, dtype=np.uint8)
+    # Draw a line item bar around y=180 to 240 (which is 0.30 to 0.40)
+    cv2.rectangle(syn_img, (10, 180), (290, 240), (200, 200, 200), -1)
+    cv2.putText(syn_img, "Cooking Oil 1L - 500", (20, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+    _, buf = cv2.imencode(".jpg", syn_img)
+    store.save_receipt_image(receipt_id, buf.tobytes(), ext="jpg")
+
+    # 3. Insert line item with normalized bbox
+    li = store.insert_line_item(
+        receipt_id=receipt_id,
+        raw_text="Cooking Oil 1L 500",
+        item_name="Cooking Oil",
+        quantity=1.0,
+        unit="ltr",
+        unit_price=500.0,
+        total_price=500.0,
+        confidence_score=0.55,
+        category="Groceries & Food",
+        is_verified=False,
+        bbox={"ymin": 0.30, "xmin": 0.03, "ymax": 0.40, "xmax": 0.97},
+    )
+
+    # 4. Insert review queue record
+    q = store.insert_review_queue_item(
+        line_item_id=li["id"],
+        candidate_text="Cooking Oil 1L 500",
+        model_confidence=0.55,
+    )
+
+    # 5. Fetch crop snippet
+    client = TestClient(app)
+    resp = client.get(f"/api/v1/review-queue/{q['id']}/crop")
+    assert resp.status_code == 200
+    assert resp.headers.get("content-type") == "image/jpeg"
+    assert resp.headers.get("x-crop-method") == "bbox", f"Expected 'bbox' crop method, got {resp.headers.get('x-crop-method')}"
+    print(f"   Crop snippet successfully returned: method={resp.headers.get('x-crop-method')}, bytes={len(resp.content)}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TEST 13: Sample Receipts Dataset (Printed & Handwritten Cases)
 # ─────────────────────────────────────────────────────────────────────────────
 

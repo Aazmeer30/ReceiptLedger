@@ -194,11 +194,14 @@ async def ingest_receipt(
             sum(t.confidence for t in tokens) / len(tokens) if tokens else 0.5
         )
 
-        # ── Step 9: NLP normalization ────────────────────────────────────────────
+        # ── Step 9: NLP normalization with spatial bounding box computation ─────
+        proc_h, proc_w = processed_image.shape[:2]
         line_items = normalizer.parse_lines_to_items(
-            text_lines, base_confidence=mean_confidence
+            text_lines,
+            base_confidence=mean_confidence,
+            image_dims=(proc_w, proc_h),
         )
-        logger.info("Normalised %d line items.", len(line_items))
+        logger.info("Normalised %d line items with bounding boxes.", len(line_items))
 
         # ── Step 10: Header extraction (merchant, date, total) ───────────────────
         merchant_name = _extract_merchant(text_lines)
@@ -250,6 +253,7 @@ async def ingest_receipt(
                     category=r["category_name"],
                     confidence_score=r["confidence_score"],
                     is_verified=r["is_verified"],
+                    bbox=r.get("bbox"),
                 ) for r in existing_items_rows
             ]
             return UploadReceiptResponse(
@@ -306,6 +310,7 @@ async def ingest_receipt(
             confidence_score=li.confidence_score,
             category=li.category,
             is_verified=li.is_verified,
+            bbox=li.bbox,
         )
 
         # Flag low-confidence items in review queue
@@ -328,6 +333,7 @@ async def ingest_receipt(
                 category=li.category,
                 confidence_score=li.confidence_score,
                 is_verified=li.is_verified,
+                bbox=li.bbox or li_row.get("bbox"),
             )
         )
 

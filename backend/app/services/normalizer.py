@@ -313,6 +313,7 @@ def _fold_continuation_lines(text_lines: List[List[OCRToken]]) -> List[List[OCRT
 def parse_lines_to_items(
     text_lines: List[List[OCRToken]],
     base_confidence: float = 0.90,
+    image_dims: Optional[Tuple[int, int]] = None,
 ) -> List[LineItemCreate]:
     """
     Convert a list of text lines (each being a list of OCRToken) into
@@ -322,6 +323,8 @@ def parse_lines_to_items(
         text_lines: Output of ocr_router.reassemble_lines().
         base_confidence: Nominal confidence for this OCR result
                          (mean token confidence from the engine).
+        image_dims: Optional (width, height) of the receipt image used
+                    to compute normalized [0..1] bounding boxes.
 
     Returns:
         List of LineItemCreate ready for deduplication and storage.
@@ -346,8 +349,36 @@ def parse_lines_to_items(
             if line_tokens else base_confidence
         )
 
+        # Compute normalized or pixel bounding box from tokens
+        line_bbox = None
+        if line_tokens:
+            try:
+                x_min = min(t.bounding_box.x_min for t in line_tokens)
+                y_min = min(t.bounding_box.y_min for t in line_tokens)
+                x_max = max(t.bounding_box.x_max for t in line_tokens)
+                y_max = max(t.bounding_box.y_max for t in line_tokens)
+                if image_dims and image_dims[0] > 0 and image_dims[1] > 0:
+                    w_img, h_img = float(image_dims[0]), float(image_dims[1])
+                    line_bbox = {
+                        "ymin": round(max(0.0, min(1.0, y_min / h_img)), 4),
+                        "xmin": round(max(0.0, min(1.0, x_min / w_img)), 4),
+                        "ymax": round(max(0.0, min(1.0, y_max / h_img)), 4),
+                        "xmax": round(max(0.0, min(1.0, x_max / w_img)), 4),
+                    }
+                else:
+                    line_bbox = {
+                        "ymin": float(y_min),
+                        "xmin": float(x_min),
+                        "ymax": float(y_max),
+                        "xmax": float(x_max),
+                    }
+            except Exception:
+                line_bbox = None
+
         item = _parse_single_line(line_text, line_conf)
         if item:
+            if line_bbox:
+                item.bbox = line_bbox
             items.append(item)
 
     logger.debug("Parsed %d line items from %d text lines.", len(items), len(text_lines))

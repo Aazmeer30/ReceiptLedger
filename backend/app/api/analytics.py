@@ -124,8 +124,9 @@ async def get_receipts(
     """
     Paginated, searchable historical receipt ledger.
     Supports filtering by merchant name substring.
+    Uses a single relational join query (select("*, line_items(*)")) to eliminate N+1 queries.
     """
-    all_receipts = store.list_receipts()
+    all_receipts = store.list_receipts(include_items=True)
 
     if search:
         search_lower = search.lower()
@@ -139,17 +140,11 @@ async def get_receipts(
     end = start + page_size
     page_data = all_receipts[start:end]
 
-    # Enrich each receipt with its line items
-    enriched = []
-    for r in page_data:
-        items = store.get_line_items_for_receipt(r["id"])
-        enriched.append({**r, "line_items": items})
-
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "receipts": enriched,
+        "receipts": page_data,
     }
 
 
@@ -232,7 +227,7 @@ async def export_ledger(
         output.seek(0)
         output.truncate(0)
 
-        all_receipts = store.list_receipts()
+        all_receipts = store.list_receipts(include_items=True)
 
         # Apply year/month filter
         for receipt in all_receipts:
@@ -244,7 +239,7 @@ async def export_ledger(
                 if not r_date.startswith(period_str):
                     continue
 
-            line_items = store.get_line_items_for_receipt(receipt["id"])
+            line_items = receipt.get("line_items") or []
 
             if not line_items:
                 # Write a receipt-only row with no items

@@ -107,3 +107,7 @@ JOIN receipts   r  ON li.receipt_id   = r.id
 JOIN categories c  ON li.category_id  = c.id
 WHERE r.status = 'PROCESSED'
 GROUP BY r.user_id, spend_period, c.name, c.color_hex;
+
+-- ── Migration 1.1: Normalized Bounding Box for Line Items ──────────────────────
+-- Persists normalized bounding boxes (ymin, xmin, ymax, xmax) for pixel-perfect crops
+ALTER TABLE line_items ADD COLUMN IF NOT EXISTS bbox JSONB;

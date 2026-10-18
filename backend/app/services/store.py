@@ -240,12 +240,17 @@ def get_receipt(receipt_id: str) -> Optional[Dict]:
     return None
 
 
-def list_receipts(user_id: Optional[str] = None) -> List[Dict]:
-    """List all receipts ordered by created_at descending."""
+def list_receipts(user_id: Optional[str] = None, include_items: bool = False) -> List[Dict]:
+    """
+    List all receipts ordered by created_at descending.
+    When include_items=True, executes a single join query (select("*, line_items(*)"))
+    in Supabase or pre-populates line items from local cache, eliminating N+1 queries.
+    """
     client = get_supabase_client()
     if client:
         try:
-            q = client.table("receipts").select("*").order("created_at", desc=True)
+            select_cols = "*, line_items(*)" if include_items else "*"
+            q = client.table("receipts").select(select_cols).order("created_at", desc=True)
             safe_user = _safe_uuid(user_id)
             if safe_user:
                 q = q.eq("user_id", safe_user)
@@ -253,6 +258,14 @@ def list_receipts(user_id: Optional[str] = None) -> List[Dict]:
             if res.data is not None:
                 for r in res.data:
                     _receipts[r["id"]] = r
+                    if include_items:
+                        items = r.get("line_items") or []
+                        for li in items:
+                            li["category_name"] = get_category_name(li.get("category_id", ""))
+                            cached = _line_items.get(li["id"])
+                            if cached and "bbox" in cached and not li.get("bbox"):
+                                li["bbox"] = cached["bbox"]
+                            _line_items[li["id"]] = li
                 return res.data
         except Exception as exc:
             logger.warning("Supabase list_receipts query error: %s", exc)
@@ -260,7 +273,20 @@ def list_receipts(user_id: Optional[str] = None) -> List[Dict]:
     rows = list(_receipts.values())
     if user_id and user_id != "anonymous":
         rows = [r for r in rows if r.get("user_id") == user_id]
-    return sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
+    sorted_rows = sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
+
+    if include_items:
+        enriched = []
+        for r in sorted_rows:
+            r_copy = dict(r)
+            r_copy["line_items"] = [
+                li for li in _line_items.values()
+                if li.get("receipt_id") == r.get("id")
+            ]
+            enriched.append(r_copy)
+        return enriched
+
+    return sorted_rows
 
 
 # ── Line Item Operations ──────────────────────────────────────────────────────
@@ -276,6 +302,7 @@ def insert_line_item(
     confidence_score: float,
     category: str,
     is_verified: bool = False,
+    bbox: Optional[Dict[str, Any]] = None,
 ) -> Dict:
     item_id = str(uuid.uuid4())
     cat_id = get_category_id(category) or get_category_id("Miscellaneous") or list(_categories.keys())[0]
@@ -293,28 +320,42 @@ def insert_line_item(
         "total_price": float(total_price),
         "confidence_score": float(confidence_score),
         "is_verified": is_verified,
+        "bbox": bbox,
     }
     _line_items[item_id] = row
 
     client = get_supabase_client()
     if client:
+        db_payload = {
+            "id": item_id,
+            "receipt_id": receipt_id,
+            "category_id": cat_id,
+            "raw_text": raw_text,
+            "item_name": item_name,
+            "quantity": float(quantity),
+            "unit": unit,
+            "unit_price": float(unit_price),
+            "total_price": float(total_price),
+            "confidence_score": float(confidence_score),
+            "is_verified": is_verified,
+        }
+        if bbox is not None:
+            db_payload["bbox"] = bbox
+
         try:
-            db_payload = {
-                "id": item_id,
-                "receipt_id": receipt_id,
-                "category_id": cat_id,
-                "raw_text": raw_text,
-                "item_name": item_name,
-                "quantity": float(quantity),
-                "unit": unit,
-                "unit_price": float(unit_price),
-                "total_price": float(total_price),
-                "confidence_score": float(confidence_score),
-                "is_verified": is_verified,
-            }
             client.table("line_items").insert(db_payload).execute()
         except Exception as exc:
-            logger.warning("Failed to insert line item to Supabase: %s", exc)
+            err_msg = str(exc)
+            if "bbox" in err_msg or "PGRST204" in err_msg:
+                # Column 'bbox' pending migration in Supabase schema cache; retry without bbox
+                try:
+                    db_payload.pop("bbox", None)
+                    client.table("line_items").insert(db_payload).execute()
+                    logger.debug("Inserted line item to Supabase without bbox (migration pending): %s", item_id)
+                except Exception as retry_exc:
+                    logger.warning("Failed to insert line item to Supabase after stripping bbox: %s", retry_exc)
+            else:
+                logger.warning("Failed to insert line item to Supabase: %s", exc)
 
     return row
 
@@ -328,12 +369,34 @@ def get_line_items_for_receipt(receipt_id: str) -> List[Dict]:
             if res.data:
                 for item in res.data:
                     item["category_name"] = get_category_name(item.get("category_id", ""))
+                    # Preserve runtime bbox if DB table schema has not yet migrated
+                    cached = _line_items.get(item["id"])
+                    if cached and "bbox" in cached and not item.get("bbox"):
+                        item["bbox"] = cached["bbox"]
                     _line_items[item["id"]] = item
                 return res.data
         except Exception as exc:
             logger.warning("Supabase get_line_items error: %s", exc)
 
     return [li for li in _line_items.values() if li.get("receipt_id") == receipt_id]
+
+
+def get_line_item(item_id: str) -> Optional[Dict]:
+    """Retrieve a single line item by ID from cache or database."""
+    if item_id in _line_items:
+        return _line_items[item_id]
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("line_items").select("*").eq("id", item_id).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                row["category_name"] = get_category_name(row.get("category_id", ""))
+                _line_items[item_id] = row
+                return row
+        except Exception as exc:
+            logger.warning("Supabase get_line_item error: %s", exc)
+    return None
 
 
 def update_line_item(item_id: str, updates: Dict[str, Any]) -> Optional[Dict]:
