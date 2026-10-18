@@ -113,7 +113,9 @@ flowchart LR
 
 ## Documentation
 
-Complete specifications and design artifacts are located under [`docs/specifications/`](docs/specifications/):
+Master documentation index and governance deliverables are cataloged in [`docs/README.md`](docs/README.md).
+
+### Core Specifications Suite ([`docs/specifications/`](docs/specifications/))
 
 | Document | Summary |
 |:---|:---|
@@ -127,6 +129,15 @@ Complete specifications and design artifacts are located under [`docs/specificat
 | [**Environment Setup**](docs/specifications/08_ENVIRONMENT_SETUP.md) | Prerequisites, local virtualenv, Node, Flutter, and Docker setup |
 | [**Development Plan**](docs/specifications/09_DEVELOPMENT_PLAN.md) | In-depth engineering implementation roadmap and algorithmic specs |
 | [**Division of Work**](docs/specifications/10_DIVISION_OF_WORK.md) | Official 6-role allocations, responsibilities, and pairing streams |
+
+### Engineering Guides & UI/UX Briefs
+
+| Document | Summary | Artifacts |
+|:---|:---|:---:|
+| [**Backend Operations Guide**](docs/guides/BACKEND_SETUP_AND_OPERATIONS_GUIDE.md) | Cloud Vision, Supabase, Tesseract setup, test suite & cURL reference | Markdown |
+| [**Dashboard Integration Guide**](docs/guides/DASHBOARD_BACKEND_INTEGRATION.md) | Monorepo API wiring, CORS rules, and development server guide | Markdown |
+| [**Mobile UI/UX Design Brief**](docs/design/MOBILE_DESIGN_BRIEF.md) | Stitch prompts, mobile screen wireframes, themes & design rules | [PDF](docs/design/ReceiptLedger_UI_UX_Design_Brief.pdf) |
+| [**Dashboard Design Brief**](docs/design/DASHBOARD_DESIGN_BRIEF.md) | Desktop triage desk layout, keyboard ergonomics, API schemas | [PDF](docs/design/ReceiptLedger_Dashboard_Design_Brief.pdf) |
 
 ---
 

@@ -90,7 +90,7 @@ python -m app.cli_test
 
 For detailed step-by-step instructions on setting up Google Cloud Vision, Supabase PostgreSQL DDL migrations, Tesseract OCR 5, and testing with real sample receipt images, see:
 
-📖 **[Backend Setup & Operations Guide](../docs/BACKEND_SETUP_AND_OPERATIONS_GUIDE.md)**
+📖 **[Backend Setup & Operations Guide](../docs/guides/BACKEND_SETUP_AND_OPERATIONS_GUIDE.md)**
 
 ---
 

@@ -83,3 +83,4 @@ backend/gemini_eval_results.json
 
 # Temporary PDF printable HTML files
 docs/*_PRINTABLE.html
+docs/**/*_PRINTABLE.html
