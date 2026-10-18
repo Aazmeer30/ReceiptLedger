@@ -64,6 +64,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   void _showEditDialog(Map<String, dynamic> item) {
     final li = item['line_item'] ?? {};
+    final queueId = item['id']?.toString() ?? '';
     final nameController = TextEditingController(text: li['item_name'] ?? item['candidate_text'] ?? '');
     final priceController = TextEditingController(text: (li['total_price'] ?? 0.0).toString());
 
@@ -71,23 +72,38 @@ class _ReviewScreenState extends State<ReviewScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Review Line Item'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Raw OCR Candidate: ${item['candidate_text']}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Confirmed Item Name', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: priceController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Confirmed Total Price (Rs.)', border: OutlineInputBorder()),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (queueId.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    _api.getReviewItemCropUrl(queueId),
+                    height: 80,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text('Raw OCR Candidate: ${item['candidate_text']}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Confirmed Item Name', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: priceController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Confirmed Total Price (Rs.)', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -200,6 +216,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         padding: EdgeInsets.zero,
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      color: Colors.grey.shade100,
+                      child: Image.network(
+                        _api.getReviewItemCropUrl(item['id']?.toString() ?? ''),
+                        height: 75,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text('Raw OCR: "$candidate"', style: TextStyle(color: Colors.grey.shade700, fontStyle: FontStyle.italic)),

@@ -40,6 +40,108 @@ class _LedgerScreenState extends State<LedgerScreen> {
     }
   }
 
+  void _showExportDialog() {
+    final exportUrl = _api.getExportCsvUrl();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export Ledger CSV'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Download the full categorized ledger spreadsheet:'),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: SelectableText(
+                exportUrl,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blueAccent),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Open this link in any browser on your network to stream receiptledger_export_all.csv directly.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _viewReceiptImage(String receiptId, String merchant) {
+    final imgUrl = _api.getReceiptImageUrl(receiptId);
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      merchant,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: InteractiveViewer(
+                child: Image.network(
+                  imgUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (ctx, child, progress) {
+                    if (progress == null) return child;
+                    return const SizedBox(
+                      height: 250,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  },
+                  errorBuilder: (ctx, err, stack) => const Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Text(
+                        'Image not found on server or storage bucket.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,6 +149,11 @@ class _LedgerScreenState extends State<LedgerScreen> {
         title: const Text('Receipt Ledger'),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: _showExportDialog,
+            tooltip: 'Export CSV',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadReceipts,
@@ -164,6 +271,18 @@ class _LedgerScreenState extends State<LedgerScreen> {
                             ),
                           );
                         }),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _viewReceiptImage(r['id']?.toString() ?? '', merchant),
+                          icon: const Icon(Icons.photo_library_outlined, size: 16),
+                          label: const Text('View Receipt Photo'),
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

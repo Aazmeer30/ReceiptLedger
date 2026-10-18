@@ -148,4 +148,23 @@ class ApiService {
     }
     throw Exception('Failed to resolve review item: ${response.statusCode}');
   }
+
+  /// Returns URL to fetch preprocessed receipt image GET /api/v1/receipts/{id}/image
+  String getReceiptImageUrl(String receiptId, {bool signedUrl = false}) {
+    final query = signedUrl ? '?signed_url=true' : '';
+    return '$_baseUrl/api/v1/receipts/$receiptId/image$query';
+  }
+
+  /// Returns URL to fetch visual crop snippet for flagged item GET /api/v1/review-queue/{id}/crop
+  String getReviewItemCropUrl(String queueId) {
+    return '$_baseUrl/api/v1/review-queue/$queueId/crop';
+  }
+
+  /// Returns URL to download CSV ledger export GET /api/v1/analytics/export?format=csv
+  String getExportCsvUrl({int? year, int? month}) {
+    String query = 'format=csv';
+    if (year != null) query += '&year=$year';
+    if (month != null) query += '&month=$month';
+    return '$_baseUrl/api/v1/analytics/export?$query';
+  }
 }
