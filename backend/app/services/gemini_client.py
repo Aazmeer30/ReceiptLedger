@@ -65,9 +65,15 @@ _RECEIPT_PROMPT = (
     "use the last Total column as total_price.\n"
     "4. confidence_score: 1.0=perfectly clear, 0.5=partially readable, 0.2=guessed.\n"
     "5. Skip items you cannot read at all.\n"
-    "6. Do NOT include subtotals, tax lines, grand totals, or payment rows in line_items.\n"
-    "7. quantity defaults to 1.0 if not shown; unit defaults to pcs.\n"
-    "8. category must be one of: Groceries & Food, Household & Cleaning, Personal Care, "
+    "6. For physical store/grocery receipts: do NOT include subtotals, tax lines, or grand totals in line_items.\n"
+    "7. For digital payment confirmations, bank transfers, or e-wallet screenshots (e.g. NayaPay, SadaPay, Easypaisa, JazzCash, Raast, banking apps):\n"
+    "   - merchant_name is the recipient or beneficiary store/person (e.g. 'ZAM ZAM BIRYANI').\n"
+    "   - receipt_date is the transaction date (e.g. '2026-10-16').\n"
+    "   - total_amount is the grand total transferred or debited.\n"
+    "   - line_items MUST contain item(s) representing the transaction: include the main payment amount (e.g. raw_text: 'Transferred to ZAM ZAM BIRYANI', item_name: 'Payment: ZAM ZAM BIRYANI', total_price: transfer amount) and any transaction fee if explicitly shown.\n"
+    "   - category should be inferred from the beneficiary (e.g. 'ZAM ZAM BIRYANI' is 'Groceries & Food', electric/gas is 'Utilities & Bills').\n"
+    "8. quantity defaults to 1.0 if not shown; unit defaults to pcs.\n"
+    "9. category must be one of: Groceries & Food, Household & Cleaning, Personal Care, "
     "Health & Pharmacy, Snacks & Beverages, Utilities & Bills, Miscellaneous.\n"
 )
 

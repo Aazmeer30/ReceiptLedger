@@ -142,13 +142,31 @@ async def ingest_receipt(
             try:
                 mime = "image/png" if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
                 g_items, g_meta = extract_and_parse(image_bytes, mime_type=mime)
-                if g_items:
+                if g_meta and (g_items or (g_meta.get("total_amount") and float(g_meta.get("total_amount", 0)) > 0)):
+                    merchant_name = (g_meta.get("merchant_name") or "").strip() or None
+                    extracted_date = g_meta.get("receipt_date")
+                    total_amount = float(g_meta.get("total_amount") or sum(li.total_price for li in g_items))
+
+                    # If this is a digital payment/transfer slip with no itemized lines, synthesize a transaction item
+                    if not g_items and total_amount > 0:
+                        cat = normalizer.classify_category(merchant_name or "Miscellaneous")
+                        g_items = [
+                            LineItemCreate(
+                                raw_text=f"Payment to {merchant_name or 'Recipient'} - Rs. {total_amount:.2f}",
+                                item_name=f"Payment: {merchant_name or 'Recipient'}",
+                                quantity=1.0,
+                                unit="pcs",
+                                unit_price=total_amount,
+                                total_price=total_amount,
+                                category=cat,
+                                confidence_score=0.95,
+                                is_verified=False,
+                            )
+                        ]
+
                     line_items = g_items
-                    model_tag = g_meta.get("_model_used", settings.gemini_model) if g_meta else settings.gemini_model
+                    model_tag = g_meta.get("_model_used", settings.gemini_model)
                     engine_used = f"gemini ({model_tag})"
-                    merchant_name = (g_meta.get("merchant_name") or "").strip() or None if g_meta else None
-                    extracted_date = g_meta.get("receipt_date") if g_meta else None
-                    total_amount = float(g_meta.get("total_amount") or sum(li.total_price for li in line_items)) if g_meta else sum(li.total_price for li in line_items)
                     mean_confidence = sum(li.confidence_score for li in line_items) / len(line_items) if line_items else 0.95
                     logger.info("Successfully extracted %d items via Gemini (%s).", len(line_items), model_tag)
             except Exception as exc:

@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Simple in-memory request counter (resets on server restart; good enough
 # for free-tier quota management within a deployment session).
 _api_call_count: int = 0
+_billing_disabled: bool = False
 
 
 class CloudVisionQuotaExceededError(Exception):
@@ -39,6 +40,8 @@ class CloudVisionQuotaExceededError(Exception):
 
 def is_available() -> bool:
     """Return True if Cloud Vision credentials are configured and the SDK is importable."""
+    if _billing_disabled:
+        return False
     cred_path = settings.google_application_credentials
     if not cred_path:
         return False
@@ -88,7 +91,13 @@ def extract_tokens(image_bytes: bytes) -> List[OCRToken]:
         response = client.text_detection(image=image_obj)
         _api_call_count += 1
     except Exception as exc:
-        logger.error("Cloud Vision API call failed: %s", exc)
+        err_msg = str(exc)
+        if "BILLING_DISABLED" in err_msg or "billing to be enabled" in err_msg:
+            global _billing_disabled
+            _billing_disabled = True
+            logger.warning("Google Cloud Vision API disabled: billing is not enabled on this GCP project. Automatically falling back to local OCR / Gemini.")
+        else:
+            logger.error("Cloud Vision API call failed: %s", exc)
         raise RuntimeError(f"Cloud Vision API error: {exc}") from exc
 
     if response.error.message:
