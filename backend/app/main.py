@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
     logger.info("Swagger UI   : http://%s:%d/docs", settings.host, settings.port)
     logger.info("=" * 60)
 
+    # Initialize Supabase tables sync & preload hashes
+    if settings.supabase_enabled:
+        store.init_supabase()
+
     # Pre-warm: Set Google credentials env var if configured
     if settings.google_application_credentials:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.google_application_credentials

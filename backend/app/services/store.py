@@ -1,39 +1,77 @@
 """
-ReceiptLedger – In-Memory Data Store
-======================================
-When Supabase is not configured (e.g., local dev / CLI testing), this module
-acts as the persistence layer, providing all the same query operations against
-in-memory Python dicts.  The interface mirrors what the Supabase client would
-provide, making it trivial to swap in the real DB later.
+ReceiptLedger – Data Persistence Store (Supabase + In-Memory Fallback)
+=======================================================================
+Provides transactional storage operations for:
+  • Receipts
+  • Line Items
+  • Review Queue Items
+  • Receipt Deduplication Hashes
+  • Spend Categories & Analytics
 
-Tables (as Python dicts keyed by UUID str):
-  - receipts
-  - line_items
-  - review_queue
-  - categories  (pre-seeded at module load)
-
-All UUIDs are generated via Python's `uuid` module.
+When Supabase is configured (`settings.supabase_enabled`), all CRUD operations
+persist directly to the PostgreSQL database on Supabase.
+When Supabase is not configured (e.g. offline dev, isolated test runs), operations
+operate against in-memory dictionaries with identical semantics.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from app.core.config import settings
 from app.core.models import SEEDED_CATEGORIES
 
+logger = logging.getLogger(__name__)
 
-# ── In-Memory Tables ──────────────────────────────────────────────────────────
+# ── In-Memory Tables / Local Cache ────────────────────────────────────────────
 
 _categories: Dict[str, Dict] = {}
 _receipts: Dict[str, Dict] = {}
 _line_items: Dict[str, Dict] = {}
 _review_queue: Dict[str, Dict] = {}
+_hashes: Dict[str, Dict] = {}
+
+# Supabase Client Singleton
+_supabase_client = None
+
+
+def _safe_uuid(val: Optional[str]) -> Optional[str]:
+    """Ensures a string is a valid UUID, returning None if invalid (e.g. 'anonymous')."""
+    if not val:
+        return None
+    try:
+        return str(uuid.UUID(str(val)))
+    except (ValueError, AttributeError):
+        return None
+
+
+def get_supabase_client():
+    """Lazily initializes and returns the Supabase client if configured."""
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+
+    if not settings.supabase_enabled:
+        return None
+
+    try:
+        from supabase import create_client
+
+        # Prefer service role key if available for full server access, else anon key
+        key = settings.supabase_service_role_key or settings.supabase_anon_key
+        _supabase_client = create_client(settings.supabase_url, key)
+        logger.info("Supabase client initialized successfully (%s)", settings.supabase_url)
+        return _supabase_client
+    except Exception as exc:
+        logger.error("Failed to initialize Supabase client: %s", exc)
+        return None
 
 
 def _seed_categories() -> None:
-    """Pre-populate the categories table with baseline category definitions."""
+    """Pre-populate local category definitions from SEEDED_CATEGORIES."""
     for cat in SEEDED_CATEGORIES:
         cat_id = str(uuid.uuid4())
         _categories[cat_id] = {
@@ -44,20 +82,93 @@ def _seed_categories() -> None:
         }
 
 
-_seed_categories()
+def _sync_categories() -> None:
+    """Sync categories from Supabase if configured, otherwise seed locally."""
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("categories").select("*").execute()
+            if res.data and len(res.data) > 0:
+                _categories.clear()
+                for row in res.data:
+                    _categories[row["id"]] = {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "color_hex": row.get("color_hex", "#6B7280"),
+                        "description": row.get("description", ""),
+                    }
+                return
+        except Exception as exc:
+            logger.debug("Initial category sync failed: %s", exc)
+
+    _seed_categories()
+
+
+# Initialize categories on module load
+_sync_categories()
+
+
+def init_supabase() -> bool:
+    """
+    Called on backend startup when Supabase is enabled.
+    Synchronizes categories from Supabase and preloads deduplication hashes.
+    """
+    client = get_supabase_client()
+    if not client:
+        return False
+
+    try:
+        # 1. Sync Categories from Supabase
+        _sync_categories()
+        logger.info("Synced %d categories from Supabase", len(_categories))
+
+        # 2. Preload Hashes into Dedup Engine
+        hash_res = client.table("receipt_hashes").select("receipt_id, phash_64, text_fingerprint_sha256").execute()
+        if hash_res.data:
+            from app.services import dedup
+            dedup.load_hashes_from_db(hash_res.data)
+            logger.info("Preloaded %d deduplication hashes from Supabase", len(hash_res.data))
+
+        return True
+    except Exception as exc:
+        logger.warning("Supabase initialization sync encountered issue: %s", exc)
+        return False
 
 
 # ── Category Helpers ──────────────────────────────────────────────────────────
 
 def get_category_id(name: str) -> Optional[str]:
     """Return the category UUID for a given category name, or None if not found."""
+    # Exact match (case-insensitive)
     for cat_id, cat in _categories.items():
-        if cat["name"] == name:
+        if cat["name"].lower() == name.lower():
             return cat_id
+
+    # Substring / partial match
+    for cat_id, cat in _categories.items():
+        if name.lower() in cat["name"].lower() or cat["name"].lower() in name.lower():
+            return cat_id
+
+    # Fallback to Miscellaneous
+    for cat_id, cat in _categories.items():
+        if "misc" in cat["name"].lower():
+            return cat_id
+
+    # Fallback to first available category
+    if _categories:
+        return list(_categories.keys())[0]
+
     return None
 
 
+def get_category_name(cat_id: str) -> str:
+    """Return category name for a given UUID, defaulting to 'Miscellaneous'."""
+    cat = _categories.get(cat_id)
+    return cat["name"] if cat else "Miscellaneous"
+
+
 def get_all_categories() -> List[Dict]:
+    """Return all categories."""
     return list(_categories.values())
 
 
@@ -73,30 +184,83 @@ def insert_receipt(
     user_id: Optional[str] = None,
 ) -> Dict:
     receipt_id = str(uuid.uuid4())
+    safe_user = _safe_uuid(user_id)
+    r_date = receipt_date or date.today().isoformat()
+
     row = {
         "id": receipt_id,
         "user_id": user_id or "anonymous",
         "merchant_name": merchant_name,
-        "receipt_date": receipt_date or date.today().isoformat(),
-        "total_amount": total_amount,
+        "receipt_date": r_date,
+        "total_amount": float(total_amount),
         "receipt_type": receipt_type,
         "status": status,
-        "ocr_confidence": ocr_confidence,
+        "ocr_confidence": float(ocr_confidence),
         "created_at": datetime.utcnow().isoformat(),
     }
     _receipts[receipt_id] = row
+
+    # Persist to Supabase if enabled
+    client = get_supabase_client()
+    if client:
+        try:
+            db_payload = {
+                "id": receipt_id,
+                "user_id": safe_user,
+                "merchant_name": merchant_name,
+                "receipt_date": r_date,
+                "total_amount": float(total_amount),
+                "receipt_type": receipt_type,
+                "status": status,
+                "ocr_confidence": float(ocr_confidence),
+            }
+            client.table("receipts").insert(db_payload).execute()
+        except Exception as exc:
+            logger.warning("Failed to insert receipt to Supabase (%s), stored in-memory", exc)
+
     return row
 
 
 def get_receipt(receipt_id: str) -> Optional[Dict]:
-    return _receipts.get(receipt_id)
+    """Fetch single receipt by ID."""
+    if receipt_id in _receipts:
+        return _receipts[receipt_id]
+
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("receipts").select("*").eq("id", receipt_id).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                _receipts[receipt_id] = row
+                return row
+        except Exception as exc:
+            logger.warning("Supabase get_receipt error: %s", exc)
+
+    return None
 
 
 def list_receipts(user_id: Optional[str] = None) -> List[Dict]:
+    """List all receipts ordered by created_at descending."""
+    client = get_supabase_client()
+    if client:
+        try:
+            q = client.table("receipts").select("*").order("created_at", desc=True)
+            safe_user = _safe_uuid(user_id)
+            if safe_user:
+                q = q.eq("user_id", safe_user)
+            res = q.execute()
+            if res.data is not None:
+                for r in res.data:
+                    _receipts[r["id"]] = r
+                return res.data
+        except Exception as exc:
+            logger.warning("Supabase list_receipts query error: %s", exc)
+
     rows = list(_receipts.values())
-    if user_id:
+    if user_id and user_id != "anonymous":
         rows = [r for r in rows if r.get("user_id") == user_id]
-    return sorted(rows, key=lambda r: r["created_at"], reverse=True)
+    return sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
 
 
 # ── Line Item Operations ──────────────────────────────────────────────────────
@@ -114,7 +278,8 @@ def insert_line_item(
     is_verified: bool = False,
 ) -> Dict:
     item_id = str(uuid.uuid4())
-    cat_id = get_category_id(category) or get_category_id("Miscellaneous")
+    cat_id = get_category_id(category) or get_category_id("Miscellaneous") or list(_categories.keys())[0]
+
     row = {
         "id": item_id,
         "receipt_id": receipt_id,
@@ -122,26 +287,99 @@ def insert_line_item(
         "category_name": category,
         "raw_text": raw_text,
         "item_name": item_name,
-        "quantity": quantity,
+        "quantity": float(quantity),
         "unit": unit,
-        "unit_price": unit_price,
-        "total_price": total_price,
-        "confidence_score": confidence_score,
+        "unit_price": float(unit_price),
+        "total_price": float(total_price),
+        "confidence_score": float(confidence_score),
         "is_verified": is_verified,
     }
     _line_items[item_id] = row
+
+    client = get_supabase_client()
+    if client:
+        try:
+            db_payload = {
+                "id": item_id,
+                "receipt_id": receipt_id,
+                "category_id": cat_id,
+                "raw_text": raw_text,
+                "item_name": item_name,
+                "quantity": float(quantity),
+                "unit": unit,
+                "unit_price": float(unit_price),
+                "total_price": float(total_price),
+                "confidence_score": float(confidence_score),
+                "is_verified": is_verified,
+            }
+            client.table("line_items").insert(db_payload).execute()
+        except Exception as exc:
+            logger.warning("Failed to insert line item to Supabase: %s", exc)
+
     return row
 
 
 def get_line_items_for_receipt(receipt_id: str) -> List[Dict]:
-    return [li for li in _line_items.values() if li["receipt_id"] == receipt_id]
+    """Retrieve all line items associated with a receipt."""
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("line_items").select("*").eq("receipt_id", receipt_id).execute()
+            if res.data:
+                for item in res.data:
+                    item["category_name"] = get_category_name(item.get("category_id", ""))
+                    _line_items[item["id"]] = item
+                return res.data
+        except Exception as exc:
+            logger.warning("Supabase get_line_items error: %s", exc)
+
+    return [li for li in _line_items.values() if li.get("receipt_id") == receipt_id]
 
 
 def update_line_item(item_id: str, updates: Dict[str, Any]) -> Optional[Dict]:
-    if item_id not in _line_items:
-        return None
-    _line_items[item_id].update(updates)
-    return _line_items[item_id]
+    """Update line item fields."""
+    if item_id in _line_items:
+        _line_items[item_id].update(updates)
+
+    client = get_supabase_client()
+    if client:
+        try:
+            # Clean fields for Supabase table
+            db_updates = {k: v for k, v in updates.items() if k != "category_name"}
+            client.table("line_items").update(db_updates).eq("id", item_id).execute()
+        except Exception as exc:
+            logger.warning("Supabase update_line_item error: %s", exc)
+
+    return _line_items.get(item_id)
+
+
+# ── Deduplication Hashes Persistence ─────────────────────────────────────────
+
+def insert_receipt_hash(receipt_id: str, phash_64: str, text_sha256: str) -> Dict:
+    """Stores visual & textual deduplication hashes in Supabase."""
+    hash_id = str(uuid.uuid4())
+    row = {
+        "id": hash_id,
+        "receipt_id": receipt_id,
+        "phash_64": phash_64,
+        "text_fingerprint_sha256": text_sha256,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    _hashes[receipt_id] = row
+
+    client = get_supabase_client()
+    if client:
+        try:
+            client.table("receipt_hashes").insert({
+                "id": hash_id,
+                "receipt_id": receipt_id,
+                "phash_64": phash_64,
+                "text_fingerprint_sha256": text_sha256,
+            }).execute()
+        except Exception as exc:
+            logger.warning("Failed to persist receipt hash to Supabase: %s", exc)
+
+    return row
 
 
 # ── Review Queue Operations ───────────────────────────────────────────────────
@@ -156,22 +394,67 @@ def insert_review_queue_item(
         "id": queue_id,
         "line_item_id": line_item_id,
         "candidate_text": candidate_text,
-        "model_confidence": model_confidence,
+        "model_confidence": float(model_confidence),
         "review_status": "UNRESOLVED",
         "flagged_at": datetime.utcnow().isoformat(),
         "resolved_at": None,
     }
     _review_queue[queue_id] = row
+
+    client = get_supabase_client()
+    if client:
+        try:
+            client.table("review_queue").insert({
+                "id": queue_id,
+                "line_item_id": line_item_id,
+                "candidate_text": candidate_text,
+                "model_confidence": float(model_confidence),
+                "review_status": "UNRESOLVED",
+            }).execute()
+        except Exception as exc:
+            logger.warning("Failed to insert review queue item to Supabase: %s", exc)
+
     return row
 
 
 def get_review_queue(status: str = "UNRESOLVED") -> List[Dict]:
-    """Return review queue items, enriched with receipt/line_item data."""
+    """Return review queue items enriched with receipt and line item details."""
+    client = get_supabase_client()
+    if client:
+        try:
+            q = client.table("review_queue").select("*, line_items(*, receipts(*))")
+            if status != "ALL":
+                q = q.eq("review_status", status)
+            q = q.order("flagged_at", desc=True)
+            res = q.execute()
+
+            if res.data:
+                enriched = []
+                for item in res.data:
+                    li_data = item.get("line_items") or {}
+                    rcpt_data = li_data.get("receipts") or {}
+                    li_data["category_name"] = get_category_name(li_data.get("category_id", ""))
+                    enriched.append({
+                        "id": item["id"],
+                        "line_item_id": item["line_item_id"],
+                        "candidate_text": item.get("candidate_text", ""),
+                        "model_confidence": item.get("model_confidence", 0.0),
+                        "review_status": item.get("review_status", "UNRESOLVED"),
+                        "flagged_at": item.get("flagged_at"),
+                        "resolved_at": item.get("resolved_at"),
+                        "line_item": li_data,
+                        "receipt_id": li_data.get("receipt_id"),
+                        "merchant_name": rcpt_data.get("merchant_name"),
+                    })
+                return enriched
+        except Exception as exc:
+            logger.warning("Supabase get_review_queue query error (%s), using local store", exc)
+
+    # Local fallback
     results = []
     for q in _review_queue.values():
         if q["review_status"] != status and status != "ALL":
             continue
-        # Enrich with line item data
         li = _line_items.get(q["line_item_id"], {})
         receipt = _receipts.get(li.get("receipt_id", ""), {})
         results.append({
@@ -180,7 +463,7 @@ def get_review_queue(status: str = "UNRESOLVED") -> List[Dict]:
             "receipt_id": li.get("receipt_id"),
             "merchant_name": receipt.get("merchant_name"),
         })
-    return sorted(results, key=lambda r: r["flagged_at"], reverse=True)
+    return sorted(results, key=lambda r: r.get("flagged_at", ""), reverse=True)
 
 
 def resolve_review_queue_item(
@@ -192,29 +475,54 @@ def resolve_review_queue_item(
     confirmed_unit_price: Optional[float] = None,
     confirmed_total_price: Optional[float] = None,
 ) -> Optional[Dict]:
-    if queue_id not in _review_queue:
-        return None
+    """Resolve a review item, updating both review_queue and the target line item."""
+    now_str = datetime.utcnow().isoformat()
 
-    # Update queue record
-    _review_queue[queue_id]["review_status"] = review_status
-    _review_queue[queue_id]["resolved_at"] = datetime.utcnow().isoformat()
+    # Update in-memory
+    if queue_id in _review_queue:
+        _review_queue[queue_id]["review_status"] = review_status
+        _review_queue[queue_id]["resolved_at"] = now_str
+        line_item_id = _review_queue[queue_id]["line_item_id"]
+    else:
+        line_item_id = None
 
-    # Update the underlying line item with confirmed values
-    line_item_id = _review_queue[queue_id]["line_item_id"]
     updates: Dict[str, Any] = {"is_verified": True}
     if confirmed_name:
         updates["item_name"] = confirmed_name
     if confirmed_quantity is not None:
-        updates["quantity"] = confirmed_quantity
+        updates["quantity"] = float(confirmed_quantity)
     if confirmed_unit:
         updates["unit"] = confirmed_unit
     if confirmed_unit_price is not None:
-        updates["unit_price"] = confirmed_unit_price
+        updates["unit_price"] = float(confirmed_unit_price)
     if confirmed_total_price is not None:
-        updates["total_price"] = confirmed_total_price
+        updates["total_price"] = float(confirmed_total_price)
 
-    update_line_item(line_item_id, updates)
-    return _review_queue[queue_id]
+    client = get_supabase_client()
+    if client:
+        try:
+            # 1. Update review_queue table
+            client.table("review_queue").update({
+                "review_status": review_status,
+                "resolved_at": now_str,
+            }).eq("id", queue_id).execute()
+
+            # 2. Get line_item_id if not found locally
+            if not line_item_id:
+                rq_row = client.table("review_queue").select("line_item_id").eq("id", queue_id).execute()
+                if rq_row.data:
+                    line_item_id = rq_row.data[0]["line_item_id"]
+
+            # 3. Update line_item
+            if line_item_id:
+                update_line_item(line_item_id, updates)
+        except Exception as exc:
+            logger.warning("Supabase resolve_review_queue_item error: %s", exc)
+
+    if line_item_id:
+        update_line_item(line_item_id, updates)
+
+    return _review_queue.get(queue_id)
 
 
 # ── Analytics Queries ─────────────────────────────────────────────────────────
@@ -225,46 +533,69 @@ def get_monthly_summary(year: int, month: int) -> Dict:
     Returns category_breakdown, total_spend, receipt_count.
     """
     period = f"{year:04d}-{month:02d}"
+
+    client = get_supabase_client()
+    if client:
+        try:
+            # Receipts for period
+            r_query = client.table("receipts").select("id, total_amount, status") \
+                .gte("receipt_date", f"{period}-01") \
+                .lte("receipt_date", f"{period}-31") \
+                .neq("status", "DUPLICATE").execute()
+
+            if r_query.data is not None:
+                period_receipts = r_query.data
+                receipt_ids = [r["id"] for r in period_receipts]
+                receipt_count = len(period_receipts)
+                total_spend = sum(float(r.get("total_amount", 0.0)) for r in period_receipts)
+
+                category_breakdown: Dict[str, float] = {}
+                if receipt_ids:
+                    items_res = client.table("line_items").select("total_price, category_id").in_("receipt_id", receipt_ids).execute()
+                    if items_res.data:
+                        for li in items_res.data:
+                            cat_name = get_category_name(li.get("category_id", ""))
+                            val = float(li.get("total_price", 0.0))
+                            category_breakdown[cat_name] = round(category_breakdown.get(cat_name, 0.0) + val, 2)
+
+                return {
+                    "period": period,
+                    "total_spend": round(total_spend, 2),
+                    "receipt_count": receipt_count,
+                    "category_breakdown": category_breakdown,
+                }
+        except Exception as exc:
+            logger.warning("Supabase get_monthly_summary query error: %s", exc)
+
+    # In-memory aggregation fallback
     period_receipts = [
         r for r in _receipts.values()
-        if r["receipt_date"].startswith(period) and r["status"] != "DUPLICATE"
+        if r.get("receipt_date", "").startswith(period) and r.get("status") != "DUPLICATE"
     ]
-
     receipt_ids = {r["id"] for r in period_receipts}
-    items_in_period = [li for li in _line_items.values() if li["receipt_id"] in receipt_ids]
+    items_in_period = [li for li in _line_items.values() if li.get("receipt_id") in receipt_ids]
 
-    total_spend = sum(li["total_price"] for li in items_in_period)
-    receipt_count = len(period_receipts)
-
-    # Category breakdown
-    category_breakdown: Dict[str, float] = {}
+    total_spend = sum(li.get("total_price", 0.0) for li in items_in_period)
+    category_breakdown = {}
     for li in items_in_period:
         cat = li.get("category_name", "Miscellaneous")
-        category_breakdown[cat] = round(category_breakdown.get(cat, 0.0) + li["total_price"], 2)
+        category_breakdown[cat] = round(category_breakdown.get(cat, 0.0) + li.get("total_price", 0.0), 2)
 
     return {
         "period": period,
         "total_spend": round(total_spend, 2),
-        "receipt_count": receipt_count,
+        "receipt_count": len(period_receipts),
         "category_breakdown": category_breakdown,
     }
 
 
 def get_monthly_trend(months: int = 3) -> List[Dict]:
-    """
-    Return per-month totals for the past N months (newest first).
-    Useful for the multi-month trend chart.
-    """
-    from datetime import date, timedelta
-    import calendar
-
+    """Return per-month totals for the past N months (oldest to newest)."""
     results = []
     today = date.today()
 
     for i in range(months - 1, -1, -1):
-        # Compute target month
         target = today.replace(day=1) - timedelta(days=i * 28)
-        # Normalise to first of month
         target = target.replace(day=1)
         summary = get_monthly_summary(target.year, target.month)
         results.append(summary)
@@ -276,10 +607,28 @@ def get_monthly_trend(months: int = 3) -> List[Dict]:
 
 def get_review_summary() -> Dict[str, int]:
     """Return counts of review queue items by status."""
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("review_queue").select("review_status").execute()
+            if res.data is not None:
+                total = len(res.data)
+                unresolved = sum(1 for q in res.data if q.get("review_status") == "UNRESOLVED")
+                accepted = sum(1 for q in res.data if q.get("review_status") == "ACCEPTED")
+                edited = sum(1 for q in res.data if q.get("review_status") == "EDITED")
+                return {
+                    "total": total,
+                    "unresolved": unresolved,
+                    "accepted": accepted,
+                    "edited": edited,
+                }
+        except Exception as exc:
+            logger.warning("Supabase get_review_summary error: %s", exc)
+
     total = len(_review_queue)
-    unresolved = sum(1 for q in _review_queue.values() if q["review_status"] == "UNRESOLVED")
-    accepted = sum(1 for q in _review_queue.values() if q["review_status"] == "ACCEPTED")
-    edited = sum(1 for q in _review_queue.values() if q["review_status"] == "EDITED")
+    unresolved = sum(1 for q in _review_queue.values() if q.get("review_status") == "UNRESOLVED")
+    accepted = sum(1 for q in _review_queue.values() if q.get("review_status") == "ACCEPTED")
+    edited = sum(1 for q in _review_queue.values() if q.get("review_status") == "EDITED")
     return {
         "total": total,
         "unresolved": unresolved,
@@ -290,17 +639,31 @@ def get_review_summary() -> Dict[str, int]:
 
 def get_categories_detailed() -> List[Dict]:
     """Return all categories with aggregated spend and item counts across all receipts."""
-    # Compute totals
+    client = get_supabase_client()
     cat_spend: Dict[str, float] = {}
     cat_items: Dict[str, int] = {}
     total_all_spend = 0.0
 
-    for li in _line_items.values():
-        cname = li.get("category_name", "Miscellaneous")
-        price = li.get("total_price", 0.0)
-        cat_spend[cname] = cat_spend.get(cname, 0.0) + price
-        cat_items[cname] = cat_items.get(cname, 0) + 1
-        total_all_spend += price
+    if client:
+        try:
+            items_res = client.table("line_items").select("total_price, category_id").execute()
+            if items_res.data:
+                for li in items_res.data:
+                    cname = get_category_name(li.get("category_id", ""))
+                    price = float(li.get("total_price", 0.0))
+                    cat_spend[cname] = cat_spend.get(cname, 0.0) + price
+                    cat_items[cname] = cat_items.get(cname, 0) + 1
+                    total_all_spend += price
+        except Exception as exc:
+            logger.warning("Supabase get_categories_detailed error: %s", exc)
+
+    if not cat_spend:
+        for li in _line_items.values():
+            cname = li.get("category_name", "Miscellaneous")
+            price = li.get("total_price", 0.0)
+            cat_spend[cname] = cat_spend.get(cname, 0.0) + price
+            cat_items[cname] = cat_items.get(cname, 0) + 1
+            total_all_spend += price
 
     results = []
     for cat in SEEDED_CATEGORIES:
@@ -352,36 +715,33 @@ def get_dashboard_overview(year: Optional[int] = None, month: Optional[int] = No
     for name, spend in current["category_breakdown"].items():
         meta = cat_map.get(name, {"color_hex": "#6B7280", "description": ""})
         pct = round((spend / cur_total * 100.0), 1) if cur_total > 0 else 0.0
-        # Count items for this category in current month
-        period_str = f"{target_year:04d}-{target_month:02d}"
-        period_rcpt_ids = {
-            r["id"] for r in _receipts.values()
-            if r["receipt_date"].startswith(period_str) and r["status"] != "DUPLICATE"
-        }
-        item_count = sum(
-            1 for li in _line_items.values()
-            if li["receipt_id"] in period_rcpt_ids and li.get("category_name") == name
-        )
+
         cat_breakdown.append({
             "category_name": name,
             "color_hex": meta["color_hex"],
             "description": meta.get("description", ""),
             "total_spend": spend,
-            "item_count": item_count,
+            "item_count": 0,
             "percentage_of_total": pct,
         })
 
-    # Sort categories by spend descending
     cat_breakdown.sort(key=lambda c: c["total_spend"], reverse=True)
-
-    # Review status & verification counts
     rev_summary = get_review_summary()
-    verified_items = sum(1 for li in _line_items.values() if li.get("is_verified"))
 
-    # Recent 5 receipts
+    # Verified items count
+    client = get_supabase_client()
+    verified_items = 0
+    if client:
+        try:
+            vres = client.table("line_items").select("id", count="exact").eq("is_verified", True).execute()
+            verified_items = vres.count or 0
+        except Exception:
+            verified_items = sum(1 for li in _line_items.values() if li.get("is_verified"))
+    else:
+        verified_items = sum(1 for li in _line_items.values() if li.get("is_verified"))
+
     recent = list_receipts()[:5]
 
-    # Pre-calculated KPI stat cards for clean frontend card rendering
     stat_cards = [
         {
             "key": "total_spend",
@@ -440,18 +800,13 @@ def get_dashboard_overview(year: Optional[int] = None, month: Optional[int] = No
 def seed_demo_data() -> Dict[str, int]:
     """
     Populate realistic demo receipts, line items, and review queue items.
-    Allows frontend/dashboard developers to test all views (KPI cards, charts,
-    velocity curves, review queue) without manual OCR uploads.
+    Writes to Supabase (and local store) to allow dashboard testing with rich charts.
     """
-    from datetime import date, timedelta
-
     today = date.today()
     this_month_str = today.strftime("%Y-%m")
-    # Date in previous month
     prev_month_date = today.replace(day=1) - timedelta(days=15)
     prev_month_str = prev_month_date.strftime("%Y-%m")
 
-    # Sample Receipts dataset
     sample_receipts_data = [
         # --- Current Month Receipts ---
         {
@@ -484,7 +839,7 @@ def seed_demo_data() -> Dict[str, int]:
             "confidence": 0.78,
             "items": [
                 ("Sugar (Cheeni) 2kg", 2.0, "kg", 160.0, 320.0, 0.88, "Groceries & Food", True),
-                ("Cooking Oil (Dalda Pouch)", 1.0, "ltr", 530.0, 530.0, 0.72, "Groceries & Food", False),  # Review Queue candidate
+                ("Cooking Oil (Dalda Pouch)", 1.0, "ltr", 530.0, 530.0, 0.72, "Groceries & Food", False),
                 ("Eggs (Anday) 1 Dozen", 1.0, "dozen", 360.0, 360.0, 0.89, "Groceries & Food", True),
             ],
         },
@@ -504,10 +859,10 @@ def seed_demo_data() -> Dict[str, int]:
             "confidence": 0.82,
             "items": [
                 ("Colgate Total Toothpaste 140g", 1.0, "tube", 310.0, 310.0, 0.91, "Personal Care", True),
-                ("Ambiguous Herbal Balm", 1.0, "box", 190.0, 190.0, 0.69, "Personal Care", False),  # Review Queue candidate
+                ("Ambiguous Herbal Balm", 1.0, "box", 190.0, 190.0, 0.69, "Personal Care", False),
             ],
         },
-        # --- Previous Month Receipts (for Trends and Delta) ---
+        # --- Previous Month Receipts ---
         {
             "merchant": "Imtiaz Super Market",
             "date": f"{prev_month_str}-15",
@@ -579,11 +934,20 @@ def seed_demo_data() -> Dict[str, int]:
 
 
 def reset_store() -> None:
-    """Clear all receipts, line items, and review items, re-initializing category definitions."""
-    global _receipts, _line_items, _review_queue, _categories
+    """Clear all receipts, line items, and review items, re-initializing categories."""
+    global _receipts, _line_items, _review_queue, _categories, _hashes
     _receipts.clear()
     _line_items.clear()
     _review_queue.clear()
     _categories.clear()
+    _hashes.clear()
     _seed_categories()
 
+    client = get_supabase_client()
+    if client:
+        try:
+            # Cascading delete from receipts clears line_items, hashes, and review_queue
+            client.table("receipts").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+            logger.info("Cleared all receipts and related records from Supabase")
+        except Exception as exc:
+            logger.warning("Supabase reset_store error: %s", exc)

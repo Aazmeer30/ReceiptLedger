@@ -266,8 +266,9 @@ async def ingest_receipt(
     )
     receipt_id = receipt_row["id"]
 
-    # Register hashes for future dedup
+    # Register hashes for future dedup (in-memory + database)
     dedup.register_hashes(receipt_id, phash_str, text_fp)
+    store.insert_receipt_hash(receipt_id, phash_str, text_fp)
 
     # Insert line items and build response list
     response_items: List[LineItemResponse] = []
