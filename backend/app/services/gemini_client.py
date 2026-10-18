@@ -81,6 +81,22 @@ _RECEIPT_PROMPT = (
 )
 
 
+_cached_client: Any = None
+_cached_api_key: Optional[str] = None
+
+
+def _get_genai_client() -> Any:
+    """Return a cached singleton genai.Client instance with persistent connection pooling."""
+    global _cached_client, _cached_api_key
+    current_key = getattr(settings, "gemini_api_key", "")
+    if _cached_client is not None and _cached_api_key == current_key:
+        return _cached_client
+    from google import genai
+    _cached_client = genai.Client(api_key=current_key)
+    _cached_api_key = current_key
+    return _cached_client
+
+
 def is_available() -> bool:
     """Return True if the Gemini API key is configured."""
     return bool(getattr(settings, "gemini_api_key", ""))
@@ -106,13 +122,15 @@ def extract_receipt_data(
         return None
 
     try:
-        from google import genai
         from google.genai import types
+        client = _get_genai_client()
     except ImportError:
         logger.warning("google-genai package not installed. Run: pip install google-genai")
         return None
+    except Exception as exc:
+        logger.warning("Failed to initialize Gemini client: %s", exc)
+        return None
 
-    client = genai.Client(api_key=settings.gemini_api_key)
     part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
     # Candidate models in order of attempt (starts with configured model, falls back on high-demand 503s)

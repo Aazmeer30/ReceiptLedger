@@ -289,6 +289,73 @@ def list_receipts(user_id: Optional[str] = None, include_items: bool = False) ->
     return sorted_rows
 
 
+def get_paginated_receipts(
+    page: int = 1,
+    page_size: int = 20,
+    search: Optional[str] = None,
+    user_id: Optional[str] = None,
+    include_items: bool = True,
+) -> Tuple[List[Dict], int]:
+    """
+    Fetch a paginated slice of receipts with exact total count directly from Supabase or local store.
+    Uses database-level .range() and .ilike() filtering to avoid loading the entire table into memory.
+    """
+    offset = max(0, (page - 1) * page_size)
+    client = get_supabase_client()
+    if client:
+        try:
+            select_cols = "*, line_items(*)" if include_items else "*"
+            q = client.table("receipts").select(select_cols, count="exact")
+            safe_user = _safe_uuid(user_id)
+            if safe_user:
+                q = q.eq("user_id", safe_user)
+            if search and search.strip():
+                q = q.ilike("merchant_name", f"%{search.strip()}%")
+            q = q.order("created_at", desc=True)
+            q = q.range(offset, offset + page_size - 1)
+            res = q.execute()
+
+            if res.data is not None:
+                total_count = res.count if res.count is not None else len(res.data)
+                for r in res.data:
+                    _receipts[r["id"]] = r
+                    if include_items:
+                        items = r.get("line_items") or []
+                        for li in items:
+                            li["category_name"] = get_category_name(li.get("category_id", ""))
+                            cached = _line_items.get(li["id"])
+                            if cached and "bbox" in cached and not li.get("bbox"):
+                                li["bbox"] = cached["bbox"]
+                            _line_items[li["id"]] = li
+                return res.data, total_count
+        except Exception as exc:
+            logger.warning("Supabase get_paginated_receipts query error: %s", exc)
+
+    # Local in-memory fallback
+    rows = list(_receipts.values())
+    if user_id and user_id != "anonymous":
+        rows = [r for r in rows if r.get("user_id") == user_id]
+    if search and search.strip():
+        s_lower = search.strip().lower()
+        rows = [r for r in rows if s_lower in (r.get("merchant_name") or "").lower()]
+    sorted_rows = sorted(rows, key=lambda r: r.get("created_at", ""), reverse=True)
+    total_count = len(sorted_rows)
+    paged_rows = sorted_rows[offset:offset + page_size]
+
+    if include_items:
+        enriched = []
+        for r in paged_rows:
+            r_copy = dict(r)
+            r_copy["line_items"] = [
+                li for li in _line_items.values()
+                if li.get("receipt_id") == r.get("id")
+            ]
+            enriched.append(r_copy)
+        return enriched, total_count
+
+    return paged_rows, total_count
+
+
 # ── Line Item Operations ──────────────────────────────────────────────────────
 
 def insert_line_item(
@@ -529,6 +596,45 @@ def get_review_queue(status: str = "UNRESOLVED") -> List[Dict]:
     return sorted(results, key=lambda r: r.get("flagged_at", ""), reverse=True)
 
 
+def get_review_queue_item(queue_id: str) -> Optional[Dict]:
+    """Retrieve a single review queue item enriched with line item and receipt context."""
+    client = get_supabase_client()
+    if client:
+        try:
+            res = client.table("review_queue").select("*, line_items(*, receipts(*))").eq("id", queue_id).maybe_single().execute()
+            if res and res.data:
+                item = res.data
+                li_data = item.get("line_items") or {}
+                rcpt_data = li_data.get("receipts") or {}
+                li_data["category_name"] = get_category_name(li_data.get("category_id", ""))
+                return {
+                    "id": item["id"],
+                    "line_item_id": item["line_item_id"],
+                    "candidate_text": item.get("candidate_text", ""),
+                    "model_confidence": item.get("model_confidence", 0.0),
+                    "review_status": item.get("review_status", "UNRESOLVED"),
+                    "flagged_at": item.get("flagged_at"),
+                    "resolved_at": item.get("resolved_at"),
+                    "line_item": li_data,
+                    "receipt_id": li_data.get("receipt_id"),
+                    "merchant_name": rcpt_data.get("merchant_name"),
+                }
+        except Exception as exc:
+            logger.warning("Supabase get_review_queue_item error: %s", exc)
+
+    q = _review_queue.get(queue_id)
+    if not q:
+        return None
+    li = _line_items.get(q["line_item_id"], {})
+    receipt = _receipts.get(li.get("receipt_id", ""), {})
+    return {
+        **q,
+        "line_item": li,
+        "receipt_id": li.get("receipt_id"),
+        "merchant_name": receipt.get("merchant_name"),
+    }
+
+
 def resolve_review_queue_item(
     queue_id: str,
     review_status: str,
@@ -656,20 +762,66 @@ def get_monthly_summary(year: int, month: int) -> Dict:
 
 
 def get_monthly_trend(months: int = 3) -> List[Dict]:
-    """Return per-month totals for the past N months (oldest to newest)."""
-    results = []
+    """
+    Return per-month totals for the past N months (oldest to newest).
+    Executes a single multi-month window query to Supabase and aggregates into
+    periods in-memory, replacing up to 24 sequential queries with 1 fast round trip.
+    """
+    import calendar as _cal
     today = date.today()
-
+    periods = []
     for i in range(months - 1, -1, -1):
-        # Step back month-by-month using first-of-month arithmetic (avoids 28/30/31 day ambiguity)
         m = today.month - i
         y = today.year
         while m < 1:
             m += 12
             y -= 1
+        periods.append((y, m, f"{y:04d}-{m:02d}"))
+
+    earliest_y, earliest_m, earliest_period = periods[0]
+    latest_y, latest_m, latest_period = periods[-1]
+    _, last_day = _cal.monthrange(latest_y, latest_m)
+
+    window_start = f"{earliest_period}-01"
+    window_end = f"{latest_period}-{last_day:02d}"
+
+    client = get_supabase_client()
+    if client:
+        try:
+            # Single round trip to fetch all receipts and their line items in the entire multi-month window
+            res = client.table("receipts").select("id, receipt_date, total_amount, status, line_items(total_price, category_id)") \
+                .gte("receipt_date", window_start) \
+                .lte("receipt_date", window_end) \
+                .neq("status", "DUPLICATE") \
+                .execute()
+
+            if res.data is not None:
+                # Group by period in-memory
+                period_map = {
+                    p_str: {"period": p_str, "total_spend": 0.0, "receipt_count": 0, "category_breakdown": {}}
+                    for _, _, p_str in periods
+                }
+
+                for r in res.data:
+                    r_date = str(r.get("receipt_date") or "")[:7]
+                    if r_date in period_map:
+                        bucket = period_map[r_date]
+                        bucket["receipt_count"] += 1
+                        bucket["total_spend"] = round(bucket["total_spend"] + float(r.get("total_amount", 0.0)), 2)
+                        for li in (r.get("line_items") or []):
+                            cat_name = get_category_name(li.get("category_id", ""))
+                            val = float(li.get("total_price", 0.0))
+                            bucket["category_breakdown"][cat_name] = round(bucket["category_breakdown"].get(cat_name, 0.0) + val, 2)
+
+                return [period_map[p_str] for _, _, p_str in periods]
+        except Exception as exc:
+            logger.warning("Supabase get_monthly_trend bulk query error: %s", exc)
+
+    # In-memory aggregation fallback
+    results = []
+    for y, m, _ in periods:
         summary = get_monthly_summary(y, m)
         results.append(summary)
-
     return results
 
 
@@ -1092,10 +1244,19 @@ def get_receipt_image_bytes(receipt_id: str) -> Optional[bytes]:
     """
     Return raw bytes of a receipt image.
 
-    Tries Supabase Storage first (for consistency across server instances), then
-    falls back to the local filesystem copy.
+    Checks the local filesystem copy first (<1ms latency), and falls back
+    to Supabase Storage if the image was processed on another server or purged locally.
     """
-    # Try Supabase Storage first
+    # 1. Try local disk first (<1ms)
+    local_path = get_receipt_image_path(receipt_id)
+    if local_path:
+        try:
+            from pathlib import Path
+            return Path(local_path).read_bytes()
+        except Exception as exc:
+            logger.warning("Failed to read local receipt image: %s", exc)
+
+    # 2. Fall back to Supabase Storage
     client = get_supabase_client()
     if client:
         for ext in ("jpg", "jpeg", "png", "webp"):
@@ -1108,15 +1269,6 @@ def get_receipt_image_bytes(receipt_id: str) -> Optional[bytes]:
                     return data
             except Exception:
                 continue
-
-    # Fall back to local disk
-    local_path = get_receipt_image_path(receipt_id)
-    if local_path:
-        try:
-            from pathlib import Path
-            return Path(local_path).read_bytes()
-        except Exception as exc:
-            logger.warning("Failed to read local receipt image: %s", exc)
 
     return None
 

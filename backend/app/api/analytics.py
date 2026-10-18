@@ -21,7 +21,12 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
-from app.core.models import MonthlySummaryResponse, TrendResponse, MonthlyTrendPoint
+from app.core.models import (
+    MonthlySummaryResponse,
+    MonthlyTrendPoint,
+    PaginatedReceiptsResponse,
+    TrendResponse,
+)
 from app.services import store
 
 logger = logging.getLogger(__name__)
@@ -113,6 +118,7 @@ async def get_trends(
 
 @router.get(
     "/analytics/receipts",
+    response_model=PaginatedReceiptsResponse,
     summary="Paginated receipt ledger",
     tags=["Analytics"],
 )
@@ -120,32 +126,28 @@ async def get_receipts(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Records per page"),
     search: Optional[str] = Query(default=None, description="Filter by merchant name"),
-) -> dict:
+) -> PaginatedReceiptsResponse:
     """
     Paginated, searchable historical receipt ledger.
     Supports filtering by merchant name substring.
-    Uses a single relational join query (select("*, line_items(*)")) to eliminate N+1 queries.
+    Uses database-level .range() and .ilike() filtering with relational join
+    (select("*, line_items(*)")) to optimize database reads and eliminate N+1 queries.
     """
-    all_receipts = store.list_receipts(include_items=True)
+    page_data, total = store.get_paginated_receipts(
+        page=page,
+        page_size=page_size,
+        search=search,
+        include_items=True,
+    )
+    total_pages = max(1, (total + page_size - 1) // page_size) if total > 0 else 1
 
-    if search:
-        search_lower = search.lower()
-        all_receipts = [
-            r for r in all_receipts
-            if search_lower in (r.get("merchant_name") or "").lower()
-        ]
-
-    total = len(all_receipts)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_data = all_receipts[start:end]
-
-    return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "receipts": page_data,
-    }
+    return PaginatedReceiptsResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        receipts=page_data,
+    )
 
 
 @router.get(

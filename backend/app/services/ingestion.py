@@ -66,25 +66,24 @@ async def ingest_receipt(
         ValueError:  If the image is too small, too blurry, or cannot be decoded.
         RuntimeError: If all OCR engines fail.
     """
-    # ── Step 1: Validate dimensions ─────────────────────────────────────────
-    if not validate_dimensions(image_bytes):
-        logger.warning("Image below minimum resolution threshold.")
-        # Don't reject — log and continue (many test images won't meet 720×1280)
-        # In production, you'd raise a 422 here.
-
-    # ── Step 2: Blur assessment ──────────────────────────────────────────────
-    blur_score = assess_blur(image_bytes)
-    if blur_score < _BLUR_THRESHOLD:
-        logger.warning("Image may be blurry (Laplacian variance=%.1f).", blur_score)
-
-    # ── Step 3: OpenCV preprocessing ─────────────────────────────────────────
+    # ── Step 1: Preprocessing & Single-pass Image Metrics ────────────────────
     try:
-        processed_image, processed_bytes = preprocess_image(image_bytes)
+        processed_image, processed_bytes, blur_score, (h_orig, w_orig) = preprocess_image(
+            image_bytes, return_metadata=True
+        )
     except Exception as exc:
         logger.error("Preprocessing failed: %s", exc)
         raise ValueError(f"Image preprocessing failed: {exc}") from exc
 
-    # ── Step 4: Early Visual Deduplication Check (Layer 1) ───────────────────
+    # Dimensions check (zero extra image decode)
+    if not validate_dimensions((h_orig, w_orig)):
+        logger.warning("Image below minimum resolution threshold (%dx%d).", w_orig, h_orig)
+
+    # Blur assessment (zero extra image decode)
+    if blur_score < _BLUR_THRESHOLD:
+        logger.warning("Image may be blurry (Laplacian variance=%.1f).", blur_score)
+
+    # ── Step 2: Early Visual Deduplication Check (Layer 1) ───────────────────
     phash_str = dedup.compute_phash(processed_image)
     is_visual_dup, dup_receipt_id = dedup.check_duplicate(phash_str, "")
     if is_visual_dup:
@@ -122,11 +121,11 @@ async def ingest_receipt(
                 line_items=existing_items,
             )
 
-    # ── Step 5: Receipt type classification ──────────────────────────────────
+    # ── Step 3: Receipt type classification ──────────────────────────────────
     receipt_type = classify_receipt_type(processed_image)
     logger.info("Classified receipt as: %s", receipt_type.value)
 
-    # ── Step 6: OCR Extraction (Gemini Vision or Local Pipeline) ─────────────
+    # ── Step 4: OCR Extraction (Gemini Vision or Local Pipeline) ─────────────
     line_items: List[LineItemCreate] = []
     merchant_name: Optional[str] = None
     extracted_date: Optional[str] = None
@@ -140,8 +139,9 @@ async def ingest_receipt(
         from app.services.gemini_client import extract_and_parse, is_available
         if is_available():
             try:
-                mime = "image/png" if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg"
-                g_items, g_meta = extract_and_parse(image_bytes, mime_type=mime)
+                # Pass optimized preprocessed JPEG bytes (~200-400KB instead of 5-10MB raw phone capture)
+                # This dramatically cuts upload latency and improves Gemini reading fidelity
+                g_items, g_meta = extract_and_parse(processed_bytes, mime_type="image/jpeg")
                 if g_meta and (g_items or (g_meta.get("total_amount") and float(g_meta.get("total_amount", 0)) > 0)):
                     merchant_name = (g_meta.get("merchant_name") or "").strip() or None
                     extracted_date = g_meta.get("receipt_date")

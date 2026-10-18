@@ -32,6 +32,8 @@ import cv2
 import numpy as np
 from PIL import Image, ExifTags
 
+from typing import Any, Optional, Tuple, Union
+
 logger = logging.getLogger(__name__)
 
 # Minimum fraction of image area the detected quad must cover to trigger warp
@@ -42,30 +44,42 @@ _OCR_MAX_LONG_EDGE = 2400
 
 # ── Public Interface ──────────────────────────────────────────────────────────
 
-def preprocess_image(image_bytes: bytes) -> Tuple[np.ndarray, bytes]:
+def preprocess_image(
+    image_bytes: bytes,
+    return_metadata: bool = False,
+) -> Union[Tuple[np.ndarray, bytes], Tuple[np.ndarray, bytes, float, Tuple[int, int]]]:
     """
     Accept raw image bytes, run the full CV preprocessing pipeline.
+
+    Args:
+        image_bytes: Raw compressed image bytes.
+        return_metadata: If True, returns additional computed metrics
+                         (blur_score, (h_orig, w_orig)) to eliminate downstream decodings.
 
     Returns:
         processed_gray (np.ndarray): The processed 2-D grayscale image array
                                       (used downstream by OCR engines).
         jpeg_bytes  (bytes):          JPEG-encoded version of the processed image
                                       (for storage / blob upload).
+        Optional metadata tuple when return_metadata is True.
     """
     # 1 ── Decode + EXIF auto-rotate (fixes upside-down phone captures) ────────
     image = _decode_with_exif_rotation(image_bytes)
     if image is None:
         raise ValueError("Could not decode image – unsupported format or corrupt data.")
 
+    h_orig, w_orig = image.shape[:2]
+
     # 2 ── Downscale if the image is very large (preserves OCR quality) ────────
     image = _limit_long_edge(image, _OCR_MAX_LONG_EDGE)
-    h_orig, w_orig = image.shape[:2]
+    h_scaled, w_scaled = image.shape[:2]
 
     # 3 ── Grayscale + gentle Gaussian blur ────────────────────────────────────
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
     # 4 ── Corner detection via adaptive paper segmentation ────────────────────
-    img_area = h_orig * w_orig
+    img_area = h_scaled * w_scaled
     quad_pts = _detect_receipt_corners(gray, img_area, image_bgr=image)
 
     # 5 ── Perspective warp (only if quad has substantial perspective distortion or background table) ─
@@ -91,30 +105,54 @@ def preprocess_image(image_bytes: bytes) -> Tuple[np.ndarray, bytes]:
     if not success:
         raise RuntimeError("Failed to encode preprocessed image to JPEG.")
 
-    return enhanced, bytes(buffer)
+    jpeg_bytes = bytes(buffer)
+    if return_metadata:
+        return enhanced, jpeg_bytes, blur_score, (h_orig, w_orig)
+    return enhanced, jpeg_bytes
 
 
-def assess_blur(image_bytes: bytes) -> float:
+def assess_blur(image_or_bytes: Union[bytes, np.ndarray]) -> float:
     """
     Compute the Laplacian variance of the image as a blur metric.
+    Accepts either raw image bytes or an already decoded NumPy array (grayscale or BGR).
     Higher value = sharper. Values below ~100 are typically too blurry.
 
     Returns:
         float: Laplacian variance (blur score).
     """
-    np_arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    if isinstance(image_or_bytes, np.ndarray):
+        if len(image_or_bytes.shape) == 3:
+            gray = cv2.cvtColor(image_or_bytes, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image_or_bytes
+        return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    np_arr = np.frombuffer(image_or_bytes, dtype=np.uint8)
     image = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
     if image is None:
         return 0.0
     return float(cv2.Laplacian(image, cv2.CV_64F).var())
 
 
-def validate_dimensions(image_bytes: bytes, min_width: int = 400, min_height: int = 600) -> bool:
+def validate_dimensions(
+    image_or_bytes: Union[bytes, np.ndarray, Tuple[int, int]],
+    min_width: int = 400,
+    min_height: int = 600,
+) -> bool:
     """
     Check that the image meets minimum resolution requirements.
+    Accepts raw image bytes, a decoded NumPy array, or an (h, w) shape tuple.
     Relaxed from 720×1280 to 400×600 to accommodate phone gallery screenshots.
     """
-    np_arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    if isinstance(image_or_bytes, (tuple, list)):
+        h, w = image_or_bytes[0], image_or_bytes[1]
+        return (w >= min_width and h >= min_height) or (h >= min_width and w >= min_height)
+
+    if isinstance(image_or_bytes, np.ndarray):
+        h, w = image_or_bytes.shape[:2]
+        return (w >= min_width and h >= min_height) or (h >= min_width and w >= min_height)
+
+    np_arr = np.frombuffer(image_or_bytes, dtype=np.uint8)
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     if image is None:
         return False

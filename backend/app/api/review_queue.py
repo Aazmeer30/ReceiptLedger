@@ -18,7 +18,13 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Path, status
 from fastapi.responses import StreamingResponse
 
-from app.core.models import ReviewQueueItem, ReviewQueueResolveRequest, ReviewStatus
+from app.core.models import (
+    ReviewQueueItem,
+    ReviewQueueItemDetail,
+    ReviewQueueResolveRequest,
+    ReviewQueueResolveResponse,
+    ReviewStatus,
+)
 from app.services import store
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,7 @@ router = APIRouter()
 
 @router.get(
     "/review-queue",
+    response_model=List[ReviewQueueItemDetail],
     summary="Fetch items pending human review",
     tags=["Review Queue"],
     responses={
@@ -35,7 +42,7 @@ router = APIRouter()
 )
 async def get_review_queue(
     status_filter: ReviewStatus = ReviewStatus.UNRESOLVED,
-) -> List[dict]:
+) -> List[ReviewQueueItemDetail]:
     """
     Returns all review queue items with the given status (default: UNRESOLVED).
     Each item includes the original receipt context and the low-confidence
@@ -47,6 +54,7 @@ async def get_review_queue(
 
 @router.patch(
     "/review-queue/{queue_id}",
+    response_model=ReviewQueueResolveResponse,
     summary="Resolve a review queue item",
     tags=["Review Queue"],
     responses={
@@ -57,7 +65,7 @@ async def get_review_queue(
 async def resolve_review_item(
     queue_id: str = Path(..., description="UUID of the review queue record"),
     payload: ReviewQueueResolveRequest = ...,
-) -> dict:
+) -> ReviewQueueResolveResponse:
     """
     Human-in-the-loop resolution endpoint.
 
@@ -113,9 +121,8 @@ async def get_review_crop(
     This gives the reviewer enough context to visually verify the OCR reading
     without scrolling through the full receipt image.
     """
-    # ── 1. Resolve queue item → line item → receipt ──────────────────────────
-    queue_items = store.get_review_queue(status="ALL")
-    item = next((q for q in queue_items if q["id"] == queue_id), None)
+    # ── 1. Resolve queue item → line item → receipt (direct point query) ──────
+    item = store.get_review_queue_item(queue_id)
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path as FPath, UploadFile, status
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from app.core.auth import UserSession, get_current_user
 from app.core.config import settings
@@ -149,7 +149,7 @@ async def upload_receipt(
 async def get_receipt_image(
     receipt_id: str = FPath(..., description="UUID of the receipt"),
     signed_url: bool = False,
-) -> StreamingResponse:
+) -> Response:
     """
     Return the preprocessed image for a receipt.
 
@@ -174,7 +174,21 @@ async def get_receipt_image(
         if url:
             return RedirectResponse(url=url, status_code=302)
 
-    # Option 2: Stream bytes from local disk / Supabase Storage
+    # Option 2: Serve directly from local disk via FileResponse (instant <1ms, zero memory buffer)
+    local_path = store.get_receipt_image_path(receipt_id)
+    if local_path:
+        ext = Path(local_path).suffix.lower().lstrip(".")
+        media_type = "image/png" if ext == "png" else ("image/webp" if ext == "webp" else "image/jpeg")
+        return FileResponse(
+            local_path,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'inline; filename="receipt_{receipt_id}.{ext}"',
+                "Cache-Control": "public, max-age=86400",
+            },
+        )
+
+    # Option 3: Stream bytes from remote Supabase Storage
     image_bytes = store.get_receipt_image_bytes(receipt_id)
     if not image_bytes:
         raise HTTPException(
@@ -196,6 +210,6 @@ async def get_receipt_image(
         media_type=media_type,
         headers={
             "Content-Disposition": f'inline; filename="receipt_{receipt_id}.img"',
-            "Cache-Control": "private, max-age=3600",
+            "Cache-Control": "public, max-age=86400",
         },
     )

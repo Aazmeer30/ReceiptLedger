@@ -159,6 +159,29 @@ class TrendResponse(BaseModel):
     months: List[MonthlyTrendPoint]
 
 
+class ReceiptDetailResponse(BaseModel):
+    id: str
+    merchant_name: Optional[str] = None
+    receipt_date: Optional[str] = None
+    total_amount: float = 0.0
+    status: str = "PROCESSED"
+    ocr_confidence: Optional[float] = None
+    receipt_type: Optional[str] = None
+    created_at: Optional[str] = None
+    user_id: Optional[str] = None
+    line_items: List[Dict[str, Any]] = []
+
+    model_config = {"extra": "allow"}
+
+
+class PaginatedReceiptsResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    receipts: List[ReceiptDetailResponse]
+
+
 # ── Review Queue ──────────────────────────────────────────────────────────────
 
 class ReviewQueueItem(BaseModel):
@@ -172,6 +195,33 @@ class ReviewQueueItem(BaseModel):
     review_status: ReviewStatus
     flagged_at: datetime
     resolved_at: Optional[datetime]
+
+
+class ReviewQueueItemDetail(BaseModel):
+    id: str
+    line_item_id: str
+    candidate_text: Optional[str] = ""
+    model_confidence: float = 0.0
+    review_status: ReviewStatus = ReviewStatus.UNRESOLVED
+    flagged_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    receipt_id: Optional[str] = None
+    merchant_name: Optional[str] = None
+    line_item: Optional[Dict[str, Any]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class ReviewQueueResolveResponse(BaseModel):
+    id: str
+    line_item_id: str
+    review_status: ReviewStatus
+    candidate_text: Optional[str] = None
+    model_confidence: Optional[float] = None
+    flagged_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+
+    model_config = {"extra": "allow"}
 
 
 class ReviewQueueResolveRequest(BaseModel):
