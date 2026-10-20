@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <rect width="100%" height="100%" fill="none" />
+  <g fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer Cover -->
+    <path d="M 60 120 L 250 135 L 440 120 L 440 385 Q 250 400 250 395 Q 250 400 60 385 Z" stroke-width="14" />
+    
+    <!-- Left Page Inner Frame & Grid -->
+    <path d="M 80 115 L 240 128 L 240 378 L 80 365 Z" stroke-width="12" />
+    <!-- Left Horizontal Grid Lines -->
+    <line x1="80" y1="140" x2="240" y2="153" />
+    <line x1="80" y1="165" x2="240" y2="178" />
+    <line x1="80" y1="190" x2="240" y2="203" />
+    <line x1="80" y1="215" x2="240" y2="228" />
+    <line x1="80" y1="240" x2="240" y2="253" />
+    <line x1="80" y1="265" x2="240" y2="278" />
+    <line x1="80" y1="290" x2="240" y2="303" />
+    <line x1="80" y1="315" x2="240" y2="328" />
+    <line x1="80" y1="340" x2="240" y2="353" />
+    <!-- Left Vertical Columns -->
+    <line x1="160" y1="121" x2="160" y2="371" />
+    <line x1="180" y1="123" x2="180" y2="373" />
+    <line x1="200" y1="125" x2="200" y2="375" />
+    <line x1="220" y1="126" x2="220" y2="376" />
+
+    <!-- Right Page Inner Frame & Grid -->
+    <path d="M 260 128 L 420 115 L 420 365 L 260 378 Z" stroke-width="12" />
+    <!-- Right Horizontal Grid Lines -->
+    <line x1="260" y1="153" x2="420" y2="140" />
+    <line x1="260" y1="178" x2="420" y2="165" />
+    <line x1="260" y1="203" x2="420" y2="190" />
+    <line x1="260" y1="228" x2="420" y2="215" />
+    <line x1="260" y1="253" x2="420" y2="240" />
+    <line x1="260" y1="278" x2="420" y2="265" />
+    <line x1="260" y1="303" x2="420" y2="290" />
+    <line x1="260" y1="328" x2="420" y2="315" />
+    <line x1="260" y1="353" x2="420" y2="340" />
+    <!-- Right Vertical Columns -->
+    <line x1="340" y1="121" x2="340" y2="371" />
+    <line x1="360" y1="120" x2="360" y2="370" />
+    <line x1="380" y1="118" x2="380" y2="368" />
+    <line x1="400" y1="116" x2="400" y2="366" />
+  </g>
+</svg>
