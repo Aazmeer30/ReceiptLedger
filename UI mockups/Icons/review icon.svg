@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <rect width="100%" height="100%" fill="none" />
+  <g fill="none" stroke="#FFFFFF" stroke-linejoin="round">
+    <!-- Document Body -->
+    <rect x="130" y="100" width="240" height="300" rx="20" ry="20" stroke-width="22" />
+    
+    <!-- Document Content Lines & Bars -->
+    <line x1="160" y1="140" x2="340" y2="140" stroke-width="12" stroke-linecap="round" />
+    <rect x="252" y="230" width="16" height="40" fill="#FFFFFF" stroke="none" />
+    <rect x="278" y="210" width="16" height="60" fill="#FFFFFF" stroke="none" />
+    <rect x="325" y="180" width="16" height="90" fill="#FFFFFF" stroke="none" />
+    <line x1="160" y1="330" x2="340" y2="330" stroke-width="12" stroke-linecap="round" />
+    <line x1="160" y1="360" x2="320" y2="360" stroke-width="12" stroke-linecap="round" />
+
+    <!-- Magnifying Glass -->
+    <circle cx="235" cy="240" r="85" stroke-width="24" fill="none" />
+    <!-- Internal Chart Details inside Glass -->
+    <path d="M 180 220 C 180 190, 210 180, 240 180" stroke-width="12" stroke-linecap="round" />
+    <line x1="180" y1="245" x2="230" y2="245" stroke-width="12" stroke-linecap="round" />
+    <!-- Handle -->
+    <line x1="295" y1="300" x2="385" y2="390" stroke-width="34" stroke-linecap="round" />
+  </g>
+</svg>
